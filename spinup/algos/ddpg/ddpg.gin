@@ -12,7 +12,7 @@ ActorCritic.activation = @tf.nn.relu
 ActorCritic.output_activation = @tf.nn.tanh
 
 Runner.action_noise = 0.1
-Runner.train_epoch_len = 4000
+Runner.train_epoch_len = 5000
 Runner.eval_epoch_len = 2000
 Runner.stop_random = 10000
 Runner.buffer_size = 1000000

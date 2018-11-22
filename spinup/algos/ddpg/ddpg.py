@@ -7,6 +7,7 @@ import tensorflow as tf
 import gin.tf
 
 from spinup.utils.logx import EpochLogger
+from spinup.utils.checkpointer import get_latest_check_num
 
 
 def load_gin_configs(gin_file, gin_bindings):
@@ -157,9 +158,12 @@ class DDPGAgent(object):
     def update_target(self):
         self.sess.run(self.update_target_op)
 
-    def setup_model(self, logger):
-        logger.setup_tf_saver(self.sess, \
-                inputs={'x': self.observation_ph, 'a': self.action_ph}, outputs={'pi': self.pi, 'q': self.q})
+    def save_model(self, checkpoints_dir, epoch):
+        self.saver.save(self.sess, osp.join(checkpoints_dir, 'tf_ckpt'), global_step=epoch)
+
+    def load_model(self, checkpoints_dir):
+        latest_epoch = get_latest_check_num(checkpoints_dir)
+        self.saver.restore(self.sess, osp.join(checkpoints_dir, f'tf_ckpt-{latest_epoch}'))
 
 
 @gin.configurable
@@ -273,12 +277,11 @@ class Runner(object):
         
     def run_experiment(self):
         logger = EpochLogger(**self.logger_kwargs)
-        self.agent.setup_model(logger)
         start_time = time.time()
         for epoch in range(self.epochs):
             self.run_train_phase(self.train_epoch_len, logger)
             self.run_eval_phase(self.eval_epoch_len, logger)
-            logger.save_state({'env': self.env}, None)
+            self.agent.save_model(self.checkpoints_dir, epoch)
             logger.log_tabular('EpisodeReturn', with_min_and_max=True)
             logger.log_tabular('Epoch', epoch + 1)
             logger.log_tabular('EpisodeLen', average_only=True)
@@ -307,10 +310,14 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--exp_name', type=str, default='ddpg')
+    parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
 
     from spinup.utils.run_utils import setup_logger_kwargs
-    logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, seed=args.seed)
+    logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)
 
     runner = Runner(env_name=args.env, epochs=args.epochs, seed=args.seed, logger_kwargs=logger_kwargs)
-    runner.run_experiment()
+    if args.test:
+        runner.run_test_and_render()
+    else:
+        runner.run_experiment()

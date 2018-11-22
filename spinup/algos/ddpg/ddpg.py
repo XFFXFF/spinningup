@@ -4,9 +4,13 @@ import time
 import gym
 import numpy as np
 import tensorflow as tf
+import gin.tf
 
 from spinup.utils.logx import EpochLogger
 
+
+def load_gin_configs(gin_file, gin_bindings):
+    gin.parse_config_files_and_bindings(gin_file, bindings=gin_bindings, skip_unknown=False)
 
 class ReplayBuffer:
     """
@@ -35,6 +39,7 @@ class ReplayBuffer:
         return self.obs1_buf[idxs], self.acts_buf[idxs], self.rews_buf[idxs], self.obs2_buf[idxs], self.done_buf[idxs]
 
 
+@gin.configurable
 class ActorCritic(object):
 
     def __init__(self, 
@@ -44,7 +49,13 @@ class ActorCritic(object):
                  action_space_high,
                  hidden_sizes=(300,),
                  activation=tf.nn.relu,
-                 output_activation=tf.nn.tanh):
+                 output_activation=tf.nn.tanh, 
+                 scope=None):
+        tf.logging.info('============================================')
+        tf.logging.info('\t %s net:', scope)
+        tf.logging.info('\t hidden_sizes: %s', hidden_sizes)
+        tf.logging.info('\t activateion: %s', activation)
+        tf.logging.info('\t output_activatioin: %s', output_activation)
         value_function_mlp = lambda x: tf.squeeze(self.mlp(x, list(hidden_sizes)+[1], activation, None), 1)
         with tf.variable_scope('pi'):
             self.pi = action_space_high * self.mlp(observation, list(hidden_sizes)+[action_dim], activation, output_activation)
@@ -62,6 +73,7 @@ class ActorCritic(object):
         return self.pi, self.q, self.q_pi
 
 
+@gin.configurable
 class DDPGAgent(object):
 
     def __init__(self, 
@@ -73,6 +85,12 @@ class DDPGAgent(object):
                  q_lr=0.001,
                  pi_lr=0.001,
                  ):
+        tf.logging.info('\t observation_dim: %d', observation_dim)
+        tf.logging.info('\t action_dim: %d', action_dim)
+        tf.logging.info('\t gamma: %f', gamma)
+        tf.logging.info('\t polyak: %f', polyak)
+        tf.logging.info('\t q_lr: %f', q_lr)
+        tf.logging.info('\t pi_lr: %f', pi_lr)
         self.observation_dim = observation_dim
         self.action_dim = action_dim
         self.action_space_high = action_space_high
@@ -119,10 +137,10 @@ class DDPGAgent(object):
 
     def _create_network(self):
         with tf.variable_scope('main'):
-            main_net = ActorCritic(self.observation_ph, self.action_ph, self.action_dim, self.action_space_high)
+            main_net = ActorCritic(self.observation_ph, self.action_ph, self.action_dim, self.action_space_high, scope='main')
             self.pi, self.q, self.q_pi = main_net.network_out()
         with tf.variable_scope('target'):
-            target_net = ActorCritic(self.next_observation_ph, self.action_ph, self.action_dim, self.action_space_high)
+            target_net = ActorCritic(self.next_observation_ph, self.action_ph, self.action_dim, self.action_space_high, scope='target')
             self.pi_target, _, self.q_pi_target = target_net.network_out()
     
     def select_action(self, observation, noise_scale=0):
@@ -144,6 +162,7 @@ class DDPGAgent(object):
                 inputs={'x': self.observation_ph, 'a': self.action_ph}, outputs={'pi': self.pi, 'q': self.q})
 
 
+@gin.configurable
 class Runner(object):
 
     def __init__(self, 
@@ -158,6 +177,15 @@ class Runner(object):
                  batch_size=100,
                  logger_kwargs=dict(),
                  ):
+        tf.logging.info('\t env_name: %s', env_name)
+        tf.logging.info('\t seed: %d', seed)
+        tf.logging.info('\t action_noise: %f', action_noise)
+        tf.logging.info('\t epochs: %d', epochs)
+        tf.logging.info('\t train_epoch_len: %d', train_epoch_len)
+        tf.logging.info('\t eval_epoch_len: %d', eval_epoch_len)
+        tf.logging.info('\t stop_random: %d', stop_random)
+        tf.logging.info('\t buffer_size: %d', buffer_size)
+        tf.logging.info('\t batch_size: %d', batch_size)
         self.action_noise = action_noise
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len

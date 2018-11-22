@@ -1,6 +1,9 @@
 
 import os
+import sys
 import tensorflow as tf
+
+from spinup.utils.logx import colorize
 
 
 def get_latest_check_num(base_directory):
@@ -12,7 +15,8 @@ def get_latest_check_num(base_directory):
     try:
         checkpoint_files = tf.gfile.Glob(glob)
     except tf.errors.NotFoundError:
-        return -1
+        print(colorize('There is no trained model that meet you requirements', 'red', bold=True))
+        sys.exit(0)
     try:
         latest_iteration = max(extract_iteration(x) for x in checkpoint_files)
         return latest_iteration

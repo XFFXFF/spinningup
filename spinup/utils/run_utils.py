@@ -22,7 +22,7 @@ import zlib
 
 DIV_LINE_WIDTH = 80
 
-def setup_logger_kwargs(exp_name, seed=None, data_dir=None, datestamp=False):
+def setup_logger_kwargs(exp_name, env_name, seed=None, data_dir=None, datestamp=False):
     """
     Sets up the output_dir for a logger and returns a dict for logger kwargs.
 
@@ -70,14 +70,15 @@ def setup_logger_kwargs(exp_name, seed=None, data_dir=None, datestamp=False):
     # Make base path
     ymd_time = time.strftime("%Y-%m-%d_") if datestamp else ''
     relpath = ''.join([ymd_time, exp_name])
-    
+    relpath = osp.join(relpath, env_name)
+
     if seed is not None:
         # Make a seed-specific subfolder in the experiment directory.
         if datestamp:
             hms_time = time.strftime("%Y-%m-%d_%H-%M-%S")
             subfolder = ''.join([hms_time, '-', exp_name, '_s', str(seed)])
         else:
-            subfolder = ''.join([exp_name, '_s', str(seed)])
+            subfolder = ''.join(['seed', str(seed)])
         relpath = osp.join(relpath, subfolder)
 
     data_dir = data_dir or DEFAULT_DATA_DIR

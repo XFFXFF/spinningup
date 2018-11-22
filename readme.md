@@ -12,11 +12,29 @@ My design principle:
 
 
 ## Installation
-You only need to refer to [installation of spinningup](http://spinningup.openai.com/en/latest/user/installation.html)
+You almost only need to refer to [the installation of spinningup](http://spinningup.openai.com/en/latest/user/installation.html). An extra command is
 
+```
+pip install gin-config
+```
+I highly recommend that you take a look at [gin-config](https://github.com/google/gin-config), a very simple but powerful tool.
 
-## Statement
-All credit to [openai/spinningup](https://github.com/openai/spinningup).
+## Running Tests
+### Training a model
+```
+cd spinningup
+python -m spinup.run --algo ddpg \
+    --env HalfCheetah-v2 \
+    --gin_files spinup/algos/ddpg/ddpg.gin
+```
+### Test a model with rendering 
+```
+python -m spinup.run --algo ddpg \
+    --env HalfCheetah-v2 \
+    --gin_files spinup/algos/ddpg/ddpg.gin \
+    --test
+```
+
 
 
 ## References

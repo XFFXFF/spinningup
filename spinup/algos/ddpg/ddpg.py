@@ -190,6 +190,7 @@ class Runner(object):
         tf.logging.info('\t stop_random: %d', stop_random)
         tf.logging.info('\t buffer_size: %d', buffer_size)
         tf.logging.info('\t batch_size: %d', batch_size)
+        self.env_name = env_name
         self.action_noise = action_noise
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
@@ -255,7 +256,7 @@ class Runner(object):
                         logger.store(PiLoss=pi_loss)
                     
                     observation = self.env.reset()
-                    logger.store(EpisodeReturn=ep_r, EpisodeLen=ep_len)
+                    logger.store(EpRet=ep_r, EpLen=ep_len)
                     ep_r, ep_len = 0, 0
 
     def run_eval_phase(self, epoch_len, logger, render=False):
@@ -270,7 +271,7 @@ class Runner(object):
             observation = next_observation
             
             if done or ep_len == self.max_ep_len:
-                logger.store(EvalEpisodeReturn=ep_r, EvalEpisodeLen=ep_len)
+                logger.store(TestEpRet=ep_r, TestEpLen=ep_len)
 
                 observation = self.env.reset()
                 ep_r, ep_len = 0, 0
@@ -282,11 +283,13 @@ class Runner(object):
             self.run_train_phase(self.train_epoch_len, logger)
             self.run_eval_phase(self.eval_epoch_len, logger)
             self.agent.save_model(self.checkpoints_dir, epoch)
-            logger.log_tabular('EpisodeReturn', with_min_and_max=True)
+            logger.log_tabular('Env', self.env_name)
             logger.log_tabular('Epoch', epoch + 1)
-            logger.log_tabular('EpisodeLen', average_only=True)
-            logger.log_tabular('EvalEpisodeReturn', with_min_and_max=True)
-            logger.log_tabular('EvalEpisodeLen', average_only=True)
+            logger.log_tabular('EpRet', with_min_and_max=True)
+            logger.log_tabular('TestEpRet', with_min_and_max=True)
+            logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('TestEpLen', average_only=True)
+            logger.log_tabular('TotalEnvInteracts', (epoch+1)*self.train_epoch_len)
             logger.log_tabular('QValue', with_min_and_max=True)
             logger.log_tabular('QLoss', average_only=True)
             logger.log_tabular('PiLoss', average_only=True)
@@ -316,6 +319,7 @@ if __name__ == '__main__':
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)
 
+    tf.logging.set_verbosity(tf.logging.INFO)
     runner = Runner(env_name=args.env, epochs=args.epochs, seed=args.seed, logger_kwargs=logger_kwargs)
     if args.test:
         runner.run_test_and_render()

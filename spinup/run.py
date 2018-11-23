@@ -4,7 +4,7 @@ from spinup.algos.ddpg import ddpg
 
 def create_runner(args, logger_kwargs):
     if args.algo == 'ddpg':
-        return ddpg.Runner(env_name=args.env, epochs=args.epochs, logger_kwargs=logger_kwargs)
+        return ddpg.Runner(env_name=args.env, seed=args.seed, epochs=args.epochs, logger_kwargs=logger_kwargs)
 
 def run(args, logger_kwargs):
     tf.logging.set_verbosity(tf.logging.INFO)

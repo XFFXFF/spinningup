@@ -1,10 +1,11 @@
-import seaborn as sns
-import pandas as pd
-import matplotlib.pyplot as plt
 import json
 import os
 import os.path as osp
+
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
 
 DIV_LINE_WIDTH = 50
 
@@ -68,15 +69,15 @@ def get_datasets(logdir, condition=None):
     datasets = []
     for root, _, files in os.walk(logdir):
         if 'progress.txt' in files:
-            exp_name = None
-            try:
-                config_path = open(os.path.join(root,'config.json'))
-                config = json.load(config_path)
-                if 'exp_name' in config:
-                    exp_name = config['exp_name']
-            except:
-                print('No file named config.json')
-            condition1 = condition or exp_name or 'exp'
+            # exp_name = None
+            # try:
+            #     config_path = open(os.path.join(root,'config.json'))
+            #     config = json.load(config_path)
+            #     if 'exp_name' in config:
+            #         exp_name = config['exp_name']
+            # except:
+            #     print('No file named config.json')
+            condition1 = condition #if exp_name else 'exp'
             condition2 = condition1 + '-' + str(exp_idx)
             exp_idx += 1
             if condition1 not in units:
@@ -161,7 +162,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('logdir', nargs='*')
-    parser.add_argument('--legend', '-l', nargs='*')
+    parser.add_argument('--legend', '-l', nargs='*', required=True)
     parser.add_argument('--xaxis', '-x', default='TotalEnvInteracts')
     parser.add_argument('--value', '-y', default='Performance', nargs='*')
     parser.add_argument('--count', action='store_true')

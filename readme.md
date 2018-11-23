@@ -14,7 +14,7 @@ My design principle:
 ## Installation
 ### Creating the python environment
 ```
-conda create -n spinningup python3.6
+conda create -n spinningup python=3.6
 source activate spinningup
 ```
 ### Installing OpenMPI
@@ -39,14 +39,14 @@ I use [gin-config](https://github.com/google/gin-config), a very simple but powe
 ```
 cd spinningup
 python -m spinup.run --algo ddpg \
-    --env HalfCheetah-v2 \
-    --gin_files spinup/algos/ddpg/ddpg.gin
+    --env Pendulum-v0 \
+    --gin_files spinup/algos/ddpg/ddpg.gin \
     --gin_bindings Runner.train_epoch_len=4000 DDPGAgent.q_lr=0.001
 ```
 ### Test a model with rendering 
 ```
 python -m spinup.run --algo ddpg \
-    --env HalfCheetah-v2 \
+    --env Pendulum-v0 \
     --gin_files spinup/algos/ddpg/ddpg.gin \
     --test
 ```

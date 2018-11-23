@@ -1,5 +1,3 @@
-from spinup.user_config import DEFAULT_DATA_DIR, FORCE_DATESTAMP, \
-                               DEFAULT_SHORTHAND, WAIT_BEFORE_LAUNCH
 from spinup.utils.logx import colorize
 from spinup.utils.mpi_tools import mpi_fork, msg
 from spinup.utils.serialization_utils import convert_json
@@ -21,6 +19,20 @@ from tqdm import trange
 import zlib
 
 DIV_LINE_WIDTH = 80
+
+# Where experiment outputs are saved by default:
+DEFAULT_DATA_DIR = osp.join(osp.abspath(osp.dirname(osp.dirname(osp.dirname(__file__)))), 'data')
+
+# Whether to automatically insert a date and time stamp into the names of
+# save directories:
+FORCE_DATESTAMP = False
+
+# Whether GridSearch provides automatically-generated default shorthands:
+DEFAULT_SHORTHAND = True
+
+# Tells the GridSearch how many seconds to pause for before launching 
+# experiments.
+WAIT_BEFORE_LAUNCH = 5
 
 def setup_logger_kwargs(exp_name, env_name, seed=None, data_dir=None, datestamp=False):
     """

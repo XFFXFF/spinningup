@@ -10,4 +10,4 @@
 from spinup.utils.logx import Logger, EpochLogger
 
 # Version
-from spinup.version import __version__
+# from spinup.version import __version__

@@ -12,12 +12,27 @@ My design principle:
 
 
 ## Installation
-You almost only need to refer to [the installation of spinningup](http://spinningup.openai.com/en/latest/user/installation.html). An extra command is
-
+### Creating the python environment
 ```
-pip install gin-config
+conda create -n spinningup python3.6
+source activate spinningup
 ```
-I highly recommend that you take a look at [gin-config](https://github.com/google/gin-config), a very simple but powerful tool.
+### Installing OpenMPI
+#### Ubuntu 
+```
+sudo apt-get update && sudo apt-get install libopenmpi-dev
+```
+#### Mac OS X
+```
+brew install openmpi
+```
+### Installing Spinning Up
+```
+git clone https://github.com/XFFXFF/spinningup.git
+cd spinningup
+pip install -e .
+```
+I use [gin-config](https://github.com/google/gin-config), a very simple but powerful tool, to manage parameters. I highly recommend that you take a look at it.
 
 ## Running Tests
 ### Training a model
@@ -26,6 +41,7 @@ cd spinningup
 python -m spinup.run --algo ddpg \
     --env HalfCheetah-v2 \
     --gin_files spinup/algos/ddpg/ddpg.gin
+    --gin_bindings Runner.train_epoch_len=4000 DDPGAgent.q_lr=0.001
 ```
 ### Test a model with rendering 
 ```
@@ -34,8 +50,6 @@ python -m spinup.run --algo ddpg \
     --gin_files spinup/algos/ddpg/ddpg.gin \
     --test
 ```
-
-
 
 ## References
 ### DDPG

@@ -52,6 +52,18 @@ class ActorCritic(object):
                  activation=tf.nn.relu,
                  output_activation=tf.nn.tanh, 
                  scope=None):
+        """Initialize the Network.
+
+        Args:
+            observation: tf placeholer, the observation we get from environment.
+            action: tf placeholder, the action we get from agent.
+            aciton_space_high: float, the maximum value action can take.
+            hidden_sizes: tuple, the dimensions of the hidden layers.
+            activation: tf activation function before the output layer.
+            output_activation: tf activation function of the output layer.
+            scope: str, the variable scope of the network
+        """
+        
         tf.logging.info('============================================')
         tf.logging.info('\t %s net:', scope)
         tf.logging.info('\t hidden_sizes: %s', hidden_sizes)
@@ -76,6 +88,7 @@ class ActorCritic(object):
 
 @gin.configurable
 class DDPGAgent(object):
+    """An implementation of DDPG Agent."""
 
     def __init__(self, 
                  observation_dim,
@@ -86,6 +99,19 @@ class DDPGAgent(object):
                  q_lr=0.001,
                  pi_lr=0.001,
                  ):
+        """Initialize the Agent.
+
+        Args:
+            observation_dim: int, The dimensions of observation vector.
+            action_dim: int, The dimensions of action vector.
+            action_space_high: float, The maximum value action can take.
+            gamma: float,  Discount factor. (Always between 0 and 1.)
+            polyak: float, Interpolation factor in polyak averaging for target 
+                networks.
+            q_lr: float, Learning rate for Q-networks.
+            pi_lr: float, Learning rate for policy.
+        """
+
         tf.logging.info('\t observation_dim: %d', observation_dim)
         tf.logging.info('\t action_dim: %d', action_dim)
         tf.logging.info('\t gamma: %f', gamma)
@@ -127,6 +153,7 @@ class DDPGAgent(object):
         self.saver = tf.train.Saver(max_to_keep=3)    
 
     def _get_var(self, scope):
+        """Get all the variables of the scope."""
         return [x for x in tf.global_variables() if scope in x.name]    
 
     def _create_placeholder(self):
@@ -181,6 +208,25 @@ class Runner(object):
                  batch_size=100,
                  logger_kwargs=dict(),
                  ):
+        """Initialize the Runner object.
+
+        Args:
+            env_name: str, Name of the environment.
+            seed: int, Seed for random number generators.
+            action_noise: float, Standard deviation for Gaussian exploration noise added 
+                to policy at trainning time.(At test time, no noise is added.)
+            epochs: int, Number of epochs to run and train agent.
+            train_epoch_len: int, Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each training epoch.
+            test_epoch_len: int, Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each testing epoch.
+            stop_random: int, Number of steps for uniform-random action selection,
+                before running real policy. Helps exploration.
+            buffer_size: int, Maximum length of replay buffer.
+            batch_size: int, Minibatch size for SGD.
+            logger_kwarfs: int, Keyword args for Epochlogger.
+        """
+
         tf.logging.info('\t env_name: %s', env_name)
         tf.logging.info('\t seed: %d', seed)
         tf.logging.info('\t action_noise: %f', action_noise)
@@ -216,6 +262,14 @@ class Runner(object):
         self.replay_buffer = ReplayBuffer(observation_dim, action_dim, buffer_size)
 
     def run_train_phase(self, epoch_len, logger):
+        """Run train phase.
+
+        Args:
+            epoch_len: int, Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each training epoch.
+            logger: object, Object to store the information.
+        """
+
         ep_r, ep_len = 0, 0
         observation = self.env.reset()
         for step in range(epoch_len):
@@ -259,12 +313,19 @@ class Runner(object):
                     logger.store(EpRet=ep_r, EpLen=ep_len)
                     ep_r, ep_len = 0, 0
 
-    def run_eval_phase(self, epoch_len, logger, render=False):
+    def run_test_phase(self, epoch_len, logger):
+         """Run test phase.
+
+        Args:
+            epoch_len: int, Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each training epoch.
+            logger: object, Object to store the information.
+        """
+
         ep_r, ep_len = 0, 0
         observation = self.env.reset()
         for step in range(epoch_len):
             action = self.agent.select_action(observation[None, :])[0]
-            if render: self.env.render()
             next_observation, reward, done, info = self.env.step(action)
             ep_r += reward
             ep_len += 1
@@ -277,11 +338,12 @@ class Runner(object):
                 ep_r, ep_len = 0, 0
         
     def run_experiment(self):
+        """Run a full experiment, spread over multiple iterations."""
         logger = EpochLogger(**self.logger_kwargs)
         start_time = time.time()
         for epoch in range(self.epochs):
             self.run_train_phase(self.train_epoch_len, logger)
-            self.run_eval_phase(self.eval_epoch_len, logger)
+            self.run_test_phase(self.eval_epoch_len, logger)
             self.agent.save_model(self.checkpoints_dir, epoch)
             logger.log_tabular('Env', self.env_name)
             logger.log_tabular('Epoch', epoch + 1)
@@ -297,10 +359,11 @@ class Runner(object):
             logger.dump_tabular() 
     
     def run_test_and_render(self):
+        """Load the saved model and test it."""
         logger = EpochLogger()
         self.agent.load_model(self.checkpoints_dir)
         for epoch in range(self.epochs):
-            self.run_eval_phase(self.eval_epoch_len, logger, render=True)
+            self.run_test_phase(self.eval_epoch_len, logger, render=True)
             logger.log_tabular('Epoch', epoch+1)
             logger.log_tabular('EvalEpisodeReturn', with_min_and_max=True)
             logger.dump_tabular()

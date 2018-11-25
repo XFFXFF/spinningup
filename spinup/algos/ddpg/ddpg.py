@@ -63,7 +63,7 @@ class ActorCritic(object):
             output_activation: tf activation function of the output layer.
             scope: str, the variable scope of the network
         """
-        
+
         tf.logging.info('============================================')
         tf.logging.info('\t %s net:', scope)
         tf.logging.info('\t hidden_sizes: %s', hidden_sizes)
@@ -313,8 +313,8 @@ class Runner(object):
                     logger.store(EpRet=ep_r, EpLen=ep_len)
                     ep_r, ep_len = 0, 0
 
-    def run_test_phase(self, epoch_len, logger):
-         """Run test phase.
+    def run_test_phase(self, epoch_len, logger, render=False):
+        """Run test phase.
 
         Args:
             epoch_len: int, Number of steps of interaction (state-action pairs)
@@ -325,6 +325,7 @@ class Runner(object):
         ep_r, ep_len = 0, 0
         observation = self.env.reset()
         for step in range(epoch_len):
+            if render: self.env.reset()
             action = self.agent.select_action(observation[None, :])[0]
             next_observation, reward, done, info = self.env.step(action)
             ep_r += reward

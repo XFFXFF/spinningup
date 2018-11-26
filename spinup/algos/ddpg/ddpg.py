@@ -68,7 +68,7 @@ class ActorCritic(object):
         tf.logging.info('\t %s net:', scope)
         tf.logging.info('\t hidden_sizes: %s', hidden_sizes)
         tf.logging.info('\t activateion: %s', activation)
-        tf.logging.info('\t output_activatioin: %s', output_activation)
+        tf.logging.info('\t output_activation: %s', output_activation)
         value_function_mlp = lambda x: tf.squeeze(self.mlp(x, list(hidden_sizes)+[1], activation, None), 1)
         with tf.variable_scope('pi'):
             self.pi = action_space_high * self.mlp(observation, list(hidden_sizes)+[action_dim], activation, output_activation)

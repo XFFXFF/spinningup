@@ -325,7 +325,7 @@ class Runner(object):
         ep_r, ep_len = 0, 0
         observation = self.env.reset()
         for step in range(epoch_len):
-            if render: self.env.reset()
+            if render: self.env.render()
             action = self.agent.select_action(observation[None, :])[0]
             next_observation, reward, done, info = self.env.step(action)
             ep_r += reward
@@ -366,14 +366,14 @@ class Runner(object):
         for epoch in range(self.epochs):
             self.run_test_phase(self.eval_epoch_len, logger, render=True)
             logger.log_tabular('Epoch', epoch+1)
-            logger.log_tabular('EvalEpisodeReturn', with_min_and_max=True)
+            logger.log_tabular('TestEpRet', with_min_and_max=True)
             logger.dump_tabular()
 
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='HalfCheetah-v2')
+    parser.add_argument('--env', type=str, default='Pendulum-v0')
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--exp_name', type=str, default='ddpg')

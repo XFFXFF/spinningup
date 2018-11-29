@@ -4,6 +4,7 @@ import time
 import gym
 import numpy as np
 import tensorflow as tf
+import gin.tf
 from gym.spaces import Box, Discrete
 from tensorflow.distributions import Categorical, Normal
 
@@ -13,6 +14,10 @@ from spinup.utils.mpi_tf import MpiAdamOptimizer, sync_all_params
 from spinup.utils.mpi_tools import mpi_fork, proc_id, mpi_statistics_scalar, num_procs
 
 
+def load_gin_configs(gin_file, gin_bindings):
+    gin.parse_config_files_and_bindings(gin_file, bindings=gin_bindings, skip_unknown=False)
+
+@gin.configurable
 class VPGNet(object):
 
     def __init__(self,
@@ -72,6 +77,7 @@ class VPGNet(object):
         return self.dist, self.v
 
 
+@gin.configurable
 class VPGAgent(object):
 
     def __init__(self,
@@ -156,7 +162,8 @@ class VPGAgent(object):
         self.saver.restore(self.sess, osp.join(checkpoints_dir, f'tf_ckpt-{latest_model}'))
 
 
-class Runner(object):
+@gin.configurable
+class VPGRunner(object):
 
     def __init__(self,
                  env_name, 
@@ -371,7 +378,7 @@ if __name__ == '__main__':
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)
 
     tf.logging.set_verbosity(tf.logging.INFO)
-    runner = Runner(args.env, args.seed, args.epochs, logger_kwargs=logger_kwargs)
+    runner = VPGRunner(args.env, args.seed, args.epochs, logger_kwargs=logger_kwargs)
     if args.test:
         runner.run_test_and_render()
     else:

@@ -10,6 +10,10 @@ My design principle:
 - Writting the shortest correct implementation of core deep RL algorithms.
 - Writting more readable code.
 
+## Algorithms
+* [VPG](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/vpg)
+* [DDPG](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/ddpg)
+
 
 ## Installation
 ### Creating the python environment

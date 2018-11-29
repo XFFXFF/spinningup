@@ -194,7 +194,7 @@ class DDPGAgent(object):
 
 
 @gin.configurable
-class Runner(object):
+class DDPGRunner(object):
 
     def __init__(self, 
                  env_name,
@@ -384,7 +384,7 @@ if __name__ == '__main__':
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)
 
     tf.logging.set_verbosity(tf.logging.INFO)
-    runner = Runner(env_name=args.env, epochs=args.epochs, seed=args.seed, logger_kwargs=logger_kwargs)
+    runner = DDPGRunner(env_name=args.env, epochs=args.epochs, seed=args.seed, logger_kwargs=logger_kwargs)
     if args.test:
         runner.run_test_and_render()
     else:

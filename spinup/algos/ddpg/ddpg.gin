@@ -11,9 +11,9 @@ ActorCritic.hidden_sizes = (300, )
 ActorCritic.activation = @tf.nn.relu
 ActorCritic.output_activation = @tf.nn.tanh
 
-Runner.action_noise = 0.1
-Runner.train_epoch_len = 5000
-Runner.eval_epoch_len = 2000
-Runner.stop_random = 10000
-Runner.buffer_size = 1000000
-Runner.batch_size = 100
+DDPGRunner.action_noise = 0.1
+DDPGRunner.train_epoch_len = 5000
+DDPGRunner.eval_epoch_len = 2000
+DDPGRunner.stop_random = 10000
+DDPGRunner.buffer_size = 1000000
+DDPGRunner.batch_size = 100

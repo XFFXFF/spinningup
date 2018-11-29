@@ -9,6 +9,8 @@ from tensorflow.distributions import Categorical, Normal
 
 from spinup.utils.checkpointer import get_latest_check_num
 from spinup.utils.logx import EpochLogger
+from spinup.utils.mpi_tf import MpiAdamOptimizer, sync_all_params
+from spinup.utils.mpi_tools import mpi_fork, proc_id, mpi_statistics_scalar, num_procs
 
 
 class VPGNet(object):
@@ -101,11 +103,14 @@ class VPGAgent(object):
             self.log_probs = tf.reduce_sum(self.dist.log_prob(self.act_ph), axis=1)
         if isinstance(self.act_space, Discrete):
             self.log_probs = self.dist.log_prob(self.act_ph)
+
         self.pi_loss = -tf.reduce_mean(self.log_probs * self.adv_ph)
         self.v_loss = tf.reduce_mean((self.ret_ph - self.v)**2)
 
-        pi_optimizer = tf.train.AdamOptimizer(learning_rate=pi_lr)
-        v_optimizer = tf.train.AdamOptimizer(learning_rate=v_lr)
+        # pi_optimizer = tf.train.AdamOptimizer(learning_rate=pi_lr)
+        # v_optimizer = tf.train.AdamOptimizer(learning_rate=v_lr)
+        pi_optimizer = MpiAdamOptimizer(learning_rate=pi_lr)
+        v_optimizer = MpiAdamOptimizer(learning_rate=v_lr)
 
         self.train_pi_op = pi_optimizer.minimize(self.pi_loss)
         self.train_v_op = v_optimizer.minimize(self.v_loss)
@@ -114,6 +119,7 @@ class VPGAgent(object):
 
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
+        self.sess.run(sync_all_params())
 
         self.saver = tf.train.Saver(max_to_keep=3)
 
@@ -186,10 +192,11 @@ class Runner(object):
         tf.logging.info('\t epochs: %d', epochs)
         tf.logging.info('\t train_epoch_len: %d', train_epoch_len)
         tf.logging.info('\t test_epoch_len: %d', test_epoch_len)
+        self.seed = seed + 1000 * proc_id()
         self.epochs = epochs
         self.gamma = gamma
         self.lam = lam
-        self.train_epoch_len = train_epoch_len
+        self.train_epoch_len = int(train_epoch_len / num_procs())
         self.test_epoch_len = test_epoch_len
         self.train_v_iters = train_v_iters
         self.logger_kwargs = logger_kwargs
@@ -199,9 +206,9 @@ class Runner(object):
 
         self.max_traj_len = max_traj_len if max_traj_len else self.env.spec.timestep_limit
 
-        tf.set_random_seed(seed)
-        np.random.seed(seed)
-        self.env.seed(seed)
+        tf.set_random_seed(self.seed)
+        np.random.seed(self.seed)
+        self.env.seed(self.seed)
 
         act_space = self.env.action_space
 
@@ -209,7 +216,7 @@ class Runner(object):
 
         self.agent = VPGAgent(obs_dim, act_space)
 
-        self.obs_buffer, self.act_buffer, self.reward_buffer, self.v_buffer, self.old_log_prob_buffer = [], [], [], [], []
+        self.obs_buffer, self.act_buffer, self.reward_buffer, self.v_buffer = [], [], [], []
 
     def discounted_cumulative_sum(self, x, discount, initial=0):
         discounted_cumulative_sums = []
@@ -243,13 +250,22 @@ class Runner(object):
         return done, next_obs, traj_len
 
     def run_train_phase(self, ep_len, train_v_iters, logger):
+        """Run train phase.
+
+        Args:
+            epoch_len: int, Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each training epoch.
+            train_v_iters: train_v_iters (int): Number of gradient descent steps to take on 
+                value function per epoch.
+            logger: object, Object to store the information.
+        """
         step = 0
         while step < ep_len:
             done, last_obs, traj_len = self.collect_trajectory(self.max_traj_len, logger)
             step += traj_len
 
             if not done:
-                _, last_v, _ = self.agent.select_action(last_obs[None, :])
+                _, last_v = self.agent.select_action(last_obs[None, :])
                 self.v_buffer.append(last_v)
                 rewards_to_go = self.discounted_cumulative_sum(self.reward_buffer, self.gamma, last_v)
             else:
@@ -258,10 +274,12 @@ class Runner(object):
 
             delta = np.array(self.reward_buffer) + np.array(self.v_buffer[1:]) * self.gamma - np.array(self.v_buffer[:-1])
             adv_buffer = self.discounted_cumulative_sum(delta, self.gamma*self.lam, 0)
+            # adv_buffer = (adv_buffer - np.mean(adv_buffer)) / np.std(adv_buffer)
+            adv_mean, adv_std = mpi_statistics_scalar(adv_buffer)
+            adv_buffer = (adv_buffer - adv_mean) / adv_std
             obs_buffer = np.array(self.obs_buffer)
             act_buffer = np.array(self.act_buffer)
             ret_buffer = np.array(rewards_to_go)
-            old_log_prob_buffer = np.array(self.old_log_prob_buffer)
 
             logger.store(EpRet=np.sum(self.reward_buffer), EpLen=traj_len)
 
@@ -307,6 +325,7 @@ class Runner(object):
                 ep_r, ep_len = 0, 0
 
     def run_experiment(self):
+        """Run a full experiment, spread over multiple iterations."""
         logger = EpochLogger(**self.logger_kwargs)
         start_time = time.time()
         for epoch in range(self.epochs):
@@ -337,17 +356,21 @@ class Runner(object):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='CartPole-v0')
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--env', type=str, default='Pendulum-v0')
+    parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--seed', '-s', type=int, default=0)
+    parser.add_argument('--cpu', type=int, default=2)
     parser.add_argument('--exp_name', type=str, default='vpg')
     parser.add_argument('--test', action='store_true')
     
     args = parser.parse_args()
 
+    mpi_fork(args.cpu)
+
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)
 
+    tf.logging.set_verbosity(tf.logging.INFO)
     runner = Runner(args.env, args.seed, args.epochs, logger_kwargs=logger_kwargs)
     if args.test:
         runner.run_test_and_render()

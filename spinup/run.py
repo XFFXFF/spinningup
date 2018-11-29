@@ -1,10 +1,17 @@
 
 import tensorflow as tf
+
+from spinup.utils.mpi_tools import mpi_fork
 from spinup.algos.ddpg import ddpg
+from spinup.algos.vpg import vpg
+
 
 def create_runner(args, logger_kwargs):
     if args.algo == 'ddpg':
         return ddpg.Runner(env_name=args.env, seed=args.seed, epochs=args.epochs, logger_kwargs=logger_kwargs)
+    if args.algo == 'vpg':
+        mpi_fork(args.cpu)
+        return vpg.Runner(env_name=args.env, seed=args.seed, epochs=args.epochs, logger_kwargs=logger_kwargs)
 
 def run(args, logger_kwargs):
     tf.logging.set_verbosity(tf.logging.INFO)
@@ -21,6 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--algo', type=str, default='ddpg')
     parser.add_argument('--env', type=str, default='HalfCheetah-v2')
     parser.add_argument('--seed', '-s', type=int, default=0)
+    parser.add_argument('--cpu', type=int, default=2)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--gin_files', nargs='+', default=["spinup/algos/ddpg/ddpg.gin"])
     parser.add_argument('--gin_bindings', nargs='+', default=[])

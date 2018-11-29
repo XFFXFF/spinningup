@@ -224,7 +224,7 @@ class Runner(object):
                 before running real policy. Helps exploration.
             buffer_size: int, Maximum length of replay buffer.
             batch_size: int, Minibatch size for SGD.
-            logger_kwarfs: int, Keyword args for Epochlogger.
+            logger_kwargs: int, Keyword args for Epochlogger.
         """
 
         tf.logging.info('\t env_name: %s', env_name)

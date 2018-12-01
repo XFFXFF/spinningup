@@ -8,14 +8,16 @@ from spinup.algos.vpg import vpg
 
 def create_runner(args, logger_kwargs):
     if args.algo == 'ddpg':
-        return ddpg.Runner(env_name=args.env, seed=args.seed, epochs=args.epochs, logger_kwargs=logger_kwargs)
+        ddpg.load_gin_configs(args.gin_files, args.gin_bindings)
+        return ddpg.DDPGRunner(env_name=args.env, seed=args.seed, epochs=args.epochs, logger_kwargs=logger_kwargs)
     if args.algo == 'vpg':
         mpi_fork(args.cpu)
-        return vpg.Runner(env_name=args.env, seed=args.seed, epochs=args.epochs, logger_kwargs=logger_kwargs)
+        vpg.load_gin_configs(args.gin_files, args.gin_bindings)
+        return vpg.VPGRunner(env_name=args.env, seed=args.seed, epochs=args.epochs, logger_kwargs=logger_kwargs)
 
 def run(args, logger_kwargs):
     tf.logging.set_verbosity(tf.logging.INFO)
-    ddpg.load_gin_configs(args.gin_files, args.gin_bindings)
+    
     runner = create_runner(args, logger_kwargs)
     if args.test:
         runner.run_test_and_render()

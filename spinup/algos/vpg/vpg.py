@@ -279,6 +279,7 @@ class VPGRunner(object):
 
             delta = np.array(self.reward_buffer) + np.array(self.v_buffer[1:]) * self.gamma - np.array(self.v_buffer[:-1])
             adv_buffer = self.discounted_cumulative_sum(delta, self.gamma*self.lam, 0)
+            adv_buffer = np.array(adv_buffer)
             # adv_buffer = (adv_buffer - np.mean(adv_buffer)) / np.std(adv_buffer)
             adv_mean, adv_std = mpi_statistics_scalar(adv_buffer)
             adv_buffer = (adv_buffer - adv_mean) / adv_std
@@ -370,7 +371,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    # mpi_fork(args.cpu)
+    mpi_fork(args.cpu)
 
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)

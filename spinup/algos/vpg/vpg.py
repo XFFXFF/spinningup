@@ -103,7 +103,7 @@ class VPGAgent(object):
         self.obs_ph, self.act_ph, self.adv_ph, self.ret_ph = self._create_placeholders()
         self.dist, self.v = self._create_network()
 
-        self.act = tf.squeeze(self.dist.sample(1), axis=1)
+        self.act = self.dist.sample()
 
         if isinstance(self.act_space, Box):
             self.log_probs = tf.reduce_sum(self.dist.log_prob(self.act_ph), axis=1)
@@ -113,8 +113,6 @@ class VPGAgent(object):
         self.pi_loss = -tf.reduce_mean(self.log_probs * self.adv_ph)
         self.v_loss = tf.reduce_mean((self.ret_ph - self.v)**2)
 
-        # pi_optimizer = tf.train.AdamOptimizer(learning_rate=pi_lr)
-        # v_optimizer = tf.train.AdamOptimizer(learning_rate=v_lr)
         pi_optimizer = MpiAdamOptimizer(learning_rate=pi_lr)
         v_optimizer = MpiAdamOptimizer(learning_rate=v_lr)
 
@@ -372,7 +370,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    mpi_fork(args.cpu)
+    # mpi_fork(args.cpu)
 
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)

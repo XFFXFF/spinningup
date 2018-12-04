@@ -5,6 +5,9 @@ from tensorflow.distributions import Categorical
 import gym
 from gym.spaces import Discrete, Box
 
+from spinup.utils.logx import EpochLogger
+from spinup.algos.trpo.core import assign_params_from_flat
+
 
 class TRPONet(object):
 
@@ -72,6 +75,10 @@ class TRPOAgent(object):
                     tf.gradients(tf.reduce_sum(self.kl_grads * self.hessian_vector_ph), self.pi_params))
         self.hession_vector_product += 0.1 * self.hessian_vector_ph
 
+        self.new_pi_params_ph = tf.placeholder(tf.float32, shape=self.flat_pi_parms.shape)
+        # self.update_pi_op = self._get_update_pi_op(self.new_pi_params_ph)
+        self.update_pi_op = assign_params_from_flat(self.new_pi_params_ph, self.pi_params)
+
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
 
@@ -110,15 +117,16 @@ class TRPOAgent(object):
     def get_kl(self, feed_dict):
         return self.sess.run(self.kl, feed_dict=feed_dict)
 
-    def update_pi_params(self, alpha_j, delta):
-        old_pi_params = self.sess.run(self.flat_pi_parms)
-        new_pi_params = old_pi_params + alpha_j * delta
+    def _get_update_pi_op(self, new_pi_params):
         params_shapes = [param.shape.as_list() for param in self.pi_params]
         params_split = [np.prod(params_shape) for params_shape in params_shapes]
         new_pi_params_split = tf.split(new_pi_params, params_split)
         new_pi_params = [tf.reshape(params, shape) for shape, params in zip(params_shapes, new_pi_params_split)]
-        update_params_op = tf.group([tf.assign(p, p_new) for p, p_new in zip(self.pi_params, new_pi_params)])
-        self.sess.run(update_params_op)
+        update_pi_op = tf.group([tf.assign(p, p_new) for p, p_new in zip(self.pi_params, new_pi_params)])
+        return update_pi_op
+
+    def update_pi_params(self, new_pi_params):
+        self.sess.run(self.update_pi_op, feed_dict={self.new_pi_params_ph: new_pi_params})
 
     def update_v_params(self, feed_dict):
         return self.sess.run(self.train_v, feed_dict=feed_dict)
@@ -131,13 +139,14 @@ class TRPORunner(object):
                  seed, 
                  epochs,
                  gamma=0.99,
-                 lam=0.95,
+                 lam=0.97,
                  train_epoch_len=5000, 
                  max_traj=None,
                  cg_iters=10,
                  delta=0.01,
                  backtrack_iter=10,
-                 backtrack_coeff=0.8):
+                 backtrack_coeff=0.8,
+                 logger_kwargs=dict()):
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
         self.gamma = gamma
@@ -146,6 +155,7 @@ class TRPORunner(object):
         self.delta = delta
         self.backtrack_iter = backtrack_iter
         self.backtrack_coeff = backtrack_coeff
+        self.logger_kwargs = logger_kwargs
 
         self.env = gym.make(env_name)
 
@@ -172,24 +182,44 @@ class TRPORunner(object):
 
     def _conjugate_gradient(self, Ax, b):
         x = np.zeros_like(b)
-        r = b
-        p = r
+        r = b.copy()
+        p = r.copy()
         k = 0
         for _ in range(self.cg_iters):
-            alpha = np.dot(r, r) / np.dot(p, Ax(p))
+            alpha = np.dot(r, r) / (np.dot(p, Ax(p)) + 1e-8)
             x_next = x + alpha * p
             r_next = r - alpha * Ax(p)
             beta = np.dot(r_next, r_next) / np.dot(r, r)
             p_next = r_next + beta * p
             x, r, p = x_next, r_next, p_next
         return x
+
+    def cg(self, Ax, b):
+        """
+        Conjugate gradient algorithm
+        (see https://en.wikipedia.org/wiki/Conjugate_gradient_method)
+        """
+        x = np.zeros_like(b)
+        r = b.copy() # Note: should be 'b - Ax(x)', but for x=0, Ax(x)=0. Change if doing warm start.
+        p = r.copy()
+        r_dot_old = np.dot(r,r)
+        for _ in range(self.cg_iters):
+            z = Ax(p)
+            alpha = r_dot_old / (np.dot(p, z) + 1e-8)
+            x += alpha * p
+            r -= alpha * z
+            r_dot_new = np.dot(r,r)
+            p = r + (r_dot_new / r_dot_old) * p
+            r_dot_old = r_dot_new
+        return x
             
-    def _colloct_trajectory(self, max_traj):
+    def _colloct_trajectory(self, max_traj, logger):
         traj_len, done = 0, False
         obs = self.env.reset()
         traj_r = 0
         while(traj_len <= (max_traj-1) and not done):
             act, v, log_prob, prob_all = self.agent.select_action(obs[None, :])
+            # print(act)
             next_obs, reward, done, _ = self.env.step(act)
             self.obs_buffer.append(obs)
             self.act_buffer.append(act)
@@ -201,13 +231,14 @@ class TRPORunner(object):
             traj_len += 1
             traj_r += reward
             obs = next_obs
-        print(traj_r)
+        # print(traj_r)
+        logger.store(EpRet=traj_r, EpLen=traj_len)
         return done, next_obs, traj_len
 
-    def _run_train_phase(self, epoch_len):
+    def _run_train_phase(self, epoch_len, logger):
         step = 0
         while step < epoch_len:
-            done, latest_obs, traj_len = self._colloct_trajectory(self.max_traj)
+            done, latest_obs, traj_len = self._colloct_trajectory(self.max_traj, logger)
             step += traj_len
             if done:
                 latest_v = 0
@@ -239,41 +270,59 @@ class TRPORunner(object):
 
             gradients, old_pi_loss, old_v_loss = self.agent.get_gradients_and_losses(feed_dict)
             Hx = self.agent.get_hessian_vector_product(feed_dict)
-            x = self._conjugate_gradient(Hx, gradients)
+            # x = self._conjugate_gradient(Hx, gradients)
+            x = self.cg(Hx, gradients)
 
             delta = np.sqrt(2 * self.delta / (np.dot(x, Hx(x)) + 1e-8)) * x
-            for j in range(self.backtrack_iter):
-                self.agent.update_pi_params(self.backtrack_coeff**j, delta)
-                kl = self.agent.get_kl(feed_dict)
-                _, new_pi_loss, _ = self.agent.get_gradients_and_losses(feed_dict)
-                if kl < self.delta and new_pi_loss < old_pi_loss:
-                    print('Accepting new params at step %d of line search.'%j)
-                    break
-                else:
-                    print('haha')
-                    self.agent.update_pi_params(-self.backtrack_coeff**j, delta)
+            # for j in range(self.backtrack_iter):
+            old_pi_params = self.agent.sess.run(self.agent.flat_pi_parms)
+            new_pi_params = old_pi_params - 1 * delta
+            self.agent.update_pi_params(new_pi_params)
+            kl = self.agent.get_kl(feed_dict)
+            _, new_pi_loss, _ = self.agent.get_gradients_and_losses(feed_dict)
+                # if kl < self.delta and new_pi_loss < old_pi_loss:
+                #     print('Accepting new params at step %d of line search.'%j)
+                #     break
+                # # else:
+                # #     print('haha')
+                #     # self.agent.update_pi_params(-self.backtrack_coeff**j, delta)
                 # if j == self.backtrack_iter - 1:
-                    # print('Line search failed! Keeping old params.')
+                #     print('Line search failed! Keeping old params.')
             
-            for _ in range(80):
+            for _ in range(1):
                 self.agent.update_v_params(feed_dict)
-                
+            
+            logger.store(PiLoss=old_pi_loss, VLoss=old_v_loss, KL=kl,\
+                         DeltaPiLoss=new_pi_loss-old_pi_loss)
 
             self.obs_buffer, self.act_buffer, self.reward_buffer, self.v_buffer = [], [], [], []
             self.old_log_probs, self.old_prob_all = [], []
 
     def run_experiment(self):
-        for i in range(self.epochs):
-            self._run_train_phase(self.train_epoch_len)
+        logger = EpochLogger(**self.logger_kwargs)
+        for epoch in range(self.epochs):
+            self._run_train_phase(self.train_epoch_len, logger)
+            logger.log_tabular('Epoch', epoch + 1)
+            logger.log_tabular('EpRet', with_min_and_max=True)
+            logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('PiLoss', average_only=True)
+            logger.log_tabular('VLoss', average_only=True)
+            logger.log_tabular('KL', average_only=True)
+            logger.log_tabular('DeltaPiLoss', average_only=True)
+            logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
+            logger.dump_tabular()
 
 
 if __name__ == '__main__':
     import argparse
-    paser = argparse.ArgumentParser()
-    paser.add_argument('--env', type=str, default='CartPole-v0')
-    paser.add_argument('--seed', type=int, default=0)
-    paser.add_argument('--epochs', type=int, default=50)
-    args = paser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--env', type=str, default='CartPole-v0')
+    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--exp_name', type=str, default='trpo')
+    args = parser.parse_args()
 
-    Runner = TRPORunner(args.env, args.seed, args.epochs)
+    from spinup.utils.run_utils import setup_logger_kwargs
+    logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)
+    Runner = TRPORunner(args.env, args.seed, args.epochs, logger_kwargs=logger_kwargs)
     Runner.run_experiment()

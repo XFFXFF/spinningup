@@ -54,7 +54,8 @@ class TRPOAgent(object):
         self.dist, self.v = self._create_network()
 
         self.act = self.dist.sample()
-        self.log_prob = self.dist.log_prob(self.act)
+        self.old_log_prob = self.dist.log_prob(self.act)
+        self.log_prob = self.dist.log_prob(self.act_ph)
 
         radio = tf.exp(self.log_prob - self.old_log_prob_ph)
         self.pi_loss = -tf.reduce_mean(radio * self.adv_ph)
@@ -105,7 +106,7 @@ class TRPOAgent(object):
         return tf.concat([tf.reshape(grad, (-1, )) for grad in grads], axis=0)
 
     def select_action(self, obs):
-        act, v, log_prob, prob_all = self.sess.run([self.act, self.v, self.log_prob, self.prob_all], feed_dict={self.obs_ph: obs})
+        act, v, log_prob, prob_all = self.sess.run([self.act, self.v, self.old_log_prob, self.prob_all], feed_dict={self.obs_ph: obs})
         return act[0], v[0], log_prob[0], prob_all[0]
 
     def get_hessian_vector_product(self, feed_dict):

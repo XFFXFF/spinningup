@@ -7,6 +7,80 @@ import gym
 from gym.spaces import Discrete, Box
 
 from spinup.utils.logx import EpochLogger
+from spinup.algos.trpo import core
+
+class TRPOBuffer:
+    """
+    A buffer for storing trajectories experienced by a TRPO agent interacting
+    with the environment, and using Generalized Advantage Estimation (GAE-Lambda)
+    for calculating the advantages of state-action pairs.
+    """
+
+    def __init__(self, obs_dim, action_space, size, gamma=0.99, lam=0.95):
+        self.obs_buf = np.zeros((size, obs_dim), dtype=np.float32)
+        if isinstance(action_space, Discrete):
+            self.act_buf = np.zeros(size, dtype=np.int32)
+        self.val_buf = np.zeros(size, dtype=np.float32)
+        self.rew_buf = np.zeros(size, dtype=np.float32)
+        self.ret_buf = np.zeros(size, dtype=np.float32)
+        self.adv_buf = np.zeros(size, dtype=np.float32)
+        self.gamma, self.lam = gamma, lam
+        self.ptr, self.path_start_idx, self.max_size = 0, 0, size
+
+    def store(self, obs, act, rew, val):
+        """
+        Append one timestep of agent-environment interaction to the buffer.
+        """
+        assert self.ptr < self.max_size     # buffer has to have room so you can store
+        self.obs_buf[self.ptr] = obs
+        self.act_buf[self.ptr] = act
+        self.rew_buf[self.ptr] = rew
+        self.val_buf[self.ptr] = val
+        self.ptr += 1
+
+    def finish_path(self, last_val=0):
+        """
+        Call this at the end of a trajectory, or when one gets cut off
+        by an epoch ending. This looks back in the buffer to where the
+        trajectory started, and uses rews and value estimates from
+        the whole trajectory to compute advantage estimates with GAE-Lambda,
+        as well as compute the rews-to-go for each state, to use as
+        the targets for the value function.
+
+        The "last_val" argument should be 0 if the trajectory ended
+        because the agent reached a terminal state (died), and otherwise
+        should be V(s_T), the value function estimated for the last state.
+        This allows us to bootstrap the rew-to-go calculation to account
+        for timesteps beyond the arbitrary episode horizon (or epoch cutoff).
+        """
+
+        path_slice = slice(self.path_start_idx, self.ptr)
+        rews = np.append(self.rew_buf[path_slice], last_val)
+        vals = np.append(self.val_buf[path_slice], last_val)
+        
+        # the next two lines implement GAE-Lambda advantage calculation
+        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
+        self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
+        
+        # the next line computes rews-to-go, to be targets for the value function
+        self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
+        
+        self.path_start_idx = self.ptr
+
+    def get(self):
+        """
+        Call this at the end of an epoch to get all of the data from
+        the buffer, with advantages appropriately normalized (shifted to have
+        mean zero and std one). Also, resets some pointers in the buffer.
+        """
+        assert self.ptr == self.max_size    # buffer has to be full before you can get
+        self.ptr, self.path_start_idx = 0, 0
+        # the next two lines implement the advantage normalization trick
+        # adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
+        adv_mean = np.mean(self.adv_buf)
+        adv_std = np.std(self.adv_buf)
+        self.adv_buf = (self.adv_buf - adv_mean) / adv_std
+        return self.obs_buf, self.act_buf, self.adv_buf, self.ret_buf
 
 
 class TRPONet(object):
@@ -106,6 +180,14 @@ class TRPOAgent(object):
     def _flat_var(self, grads):
         return tf.concat([tf.reshape(grad, (-1, )) for grad in grads], axis=0)
 
+    def _get_update_pi_op(self, new_pi_params):
+        params_shapes = [param.shape.as_list() for param in self.pi_params]
+        params_split = [np.prod(params_shape) for params_shape in params_shapes]
+        new_pi_params_split = tf.split(new_pi_params, params_split)
+        new_pi_params = [tf.reshape(params, shape) for shape, params in zip(params_shapes, new_pi_params_split)]
+        update_pi_op = tf.group([tf.assign(p, p_new) for p, p_new in zip(self.pi_params, new_pi_params)])
+        return update_pi_op
+
     def select_action(self, obs):
         act, v = self.sess.run([self.act, self.v], feed_dict={self.obs_ph: obs})
         return act[0], v[0]
@@ -118,14 +200,6 @@ class TRPOAgent(object):
 
     def get_kl(self, feed_dict):
         return self.sess.run(self.kl, feed_dict=feed_dict)
-
-    def _get_update_pi_op(self, new_pi_params):
-        params_shapes = [param.shape.as_list() for param in self.pi_params]
-        params_split = [np.prod(params_shape) for params_shape in params_shapes]
-        new_pi_params_split = tf.split(new_pi_params, params_split)
-        new_pi_params = [tf.reshape(params, shape) for shape, params in zip(params_shapes, new_pi_params_split)]
-        update_pi_op = tf.group([tf.assign(p, p_new) for p, p_new in zip(self.pi_params, new_pi_params)])
-        return update_pi_op
 
     def update_pi_params(self, new_pi_params):
         return self.sess.run(self.update_pi_op, feed_dict={self.new_pi_params_ph: new_pi_params})
@@ -173,8 +247,7 @@ class TRPORunner(object):
         action_space = self.env.action_space
 
         self.agent = TRPOAgent(obs_dim, action_space)
-
-        self.obs_buffer, self.act_buffer, self.reward_buffer, self.v_buffer = [], [], [], []
+        self.buffer = TRPOBuffer(obs_dim, action_space, train_epoch_len, gamma, lam)
 
     def _discounted_cumulative_sum(self, x, discount, initial=0):
         discounted_cumulative_sums = []
@@ -198,81 +271,65 @@ class TRPORunner(object):
             x, r, p = x_next, r_next, p_next
         return x
             
-    def _colloct_trajectory(self, max_traj, logger):
-        traj_len, done = 0, False
-        obs = self.env.reset()
-        traj_r = 0
-        while(traj_len <= (max_traj-1) and not done):
-            act, v = self.agent.select_action(obs[None, :])
-            next_obs, reward, done, _ = self.env.step(act)
-            self.obs_buffer.append(obs)
-            self.act_buffer.append(act)
-            self.reward_buffer.append(reward)
-            self.v_buffer.append(v)
-
-            traj_len += 1
-            traj_r += reward
-            obs = next_obs
-        logger.store(EpRet=traj_r, EpLen=traj_len)
-        return done, next_obs, traj_len
-
-    def _run_train_phase(self, epoch_len, logger):
+    def _colloct_trajectories(self, epoch_len, max_traj, logger):
         step = 0
         while step < epoch_len:
-            done, latest_obs, traj_len = self._colloct_trajectory(self.max_traj, logger)
-            step += traj_len
+            traj_len, traj_r, done = 0, 0, False
+            obs = self.env.reset()
+            while(traj_len < max_traj and step < epoch_len and not done):
+                act, v = self.agent.select_action(obs[None, :])
+                next_obs, rew, done, _ = self.env.step(act)
+                self.buffer.store(obs, act, rew, v)
+
+                step += 1
+                traj_len += 1
+                traj_r += rew
+                obs = next_obs
+
             if done:
-                latest_v = 0
-                rewards_to_go = self._discounted_cumulative_sum(self.reward_buffer, self.gamma, latest_v)
+                last_v = 0
             else:
-                _, latest_v, _, _ = self.agent.select_action(latest_obs[None, :]) 
-                rewards_to_go = self._discounted_cumulative_sum(self.reward_buffer, self.gamma, latest_v)
-            self.v_buffer.append(latest_v)
+                _, last_v = self.agent.select_action(next_obs[None, :])
+            self.buffer.finish_path(last_v)
+                
+            logger.store(EpRet=traj_r, EpLen=traj_len)
+        
 
-            td_delta = np.array(self.reward_buffer) + self.gamma * np.array(self.v_buffer[1:]) - np.array(self.v_buffer[:-1])
-            adv_buffer = self._discounted_cumulative_sum(td_delta, self.lam*self.gamma)
-            adv_buffer = np.array(adv_buffer)
-            adv_mean, adv_std = np.mean(adv_buffer), np.std(adv_buffer)
-            adv_buffer = (adv_buffer - adv_mean) / adv_std
-            obs_buffer = np.array(self.obs_buffer)
-            act_buffer = np.array(self.act_buffer)
-            ret_buffer = np.array(rewards_to_go)
+    def _run_train_phase(self, epoch_len, logger):
+        self._colloct_trajectories(epoch_len, self.max_traj, logger)
 
-            feed_dict = {
-                self.agent.obs_ph: obs_buffer,
-                self.agent.act_ph: act_buffer,
-                self.agent.ret_ph: ret_buffer,
-                self.agent.adv_ph: adv_buffer,
-            }
-            ra = self.agent.sess.run(self.agent.kl, feed_dict=feed_dict)
-            gradients, old_pi_loss, old_v_loss = self.agent.get_gradients_and_losses(feed_dict)
-            Hx = self.agent.get_hessian_vector_product(feed_dict)
-            x = self._conjugate_gradient(Hx, gradients)
+        obs_buffer, act_buffer, adv_buffer, ret_buffer = self.buffer.get()
+        feed_dict = {
+            self.agent.obs_ph: obs_buffer,
+            self.agent.act_ph: act_buffer,
+            self.agent.ret_ph: ret_buffer,
+            self.agent.adv_ph: adv_buffer,
+        }
+        gradients, old_pi_loss, old_v_loss = self.agent.get_gradients_and_losses(feed_dict)
+        Hx = self.agent.get_hessian_vector_product(feed_dict)
+        x = self._conjugate_gradient(Hx, gradients)
 
-            delta = np.sqrt(2 * self.delta / (np.dot(x, Hx(x)) + 1e-8)) * x
-            # for j in range(self.backtrack_iter):
+        delta = np.sqrt(2 * self.delta / (np.dot(x, Hx(x)) + 1e-8)) * x
+        for j in range(self.backtrack_iter):
             old_pi_params = self.agent.sess.run(self.agent.flat_pi_parms)
-            new_pi_params = old_pi_params - 1 * delta
+            new_pi_params = old_pi_params - (self.backtrack_coeff**j) * delta
             self.agent.update_pi_params(new_pi_params)
             kl = self.agent.get_kl(feed_dict)
             _, new_pi_loss, _ = self.agent.get_gradients_and_losses(feed_dict)
-                # if kl < self.delta and new_pi_loss < old_pi_loss:
-                #     print('Accepting new params at step %d of line search.'%j)
-                #     break
-                # # else:
-                # #     print('haha')
-                #     # self.agent.update_pi_params(-self.backtrack_coeff**j, delta)
-                # if j == self.backtrack_iter - 1:
-                #     print('Line search failed! Keeping old params.')
-            
-            for _ in range(1):
-                self.agent.update_v_params(feed_dict)
-            self.agent.sync_old_pi_parmas()
+            if kl < self.delta and new_pi_loss < old_pi_loss:
+                logger.log('Accepting new params at step %d of line search.'%j)
+                break
+            else:
+                self.agent.update_pi_params(old_pi_params)
+            if j == self.backtrack_iter - 1:
+                logger.log('Line search failed! Keeping old params.')
+        
+        for _ in range(80):
+            self.agent.update_v_params(feed_dict)
+        self.agent.sync_old_pi_parmas()
 
-            logger.store(PiLoss=old_pi_loss, VLoss=old_v_loss, KL=kl,\
-                         DeltaPiLoss=new_pi_loss-old_pi_loss)
-            self.obs_buffer, self.act_buffer, self.reward_buffer, self.v_buffer = [], [], [], []
-            self.old_log_probs, self.old_prob_all = [], []
+        logger.store(PiLoss=old_pi_loss, VLoss=old_v_loss, KL=kl,\
+                        DeltaPiLoss=new_pi_loss-old_pi_loss)
 
     def run_experiment(self):
         logger = EpochLogger(**self.logger_kwargs)

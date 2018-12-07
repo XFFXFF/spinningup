@@ -1,13 +1,16 @@
 
 import time
+
+import gym
 import numpy as np
 import tensorflow as tf
+from gym.spaces import Box, Discrete
 from tensorflow.distributions import Categorical
-import gym
-from gym.spaces import Discrete, Box
 
 from spinup.utils.logx import EpochLogger
-from spinup.algos.trpo import core
+
+EPS = 1E-8
+
 
 class TRPOBuffer:
     """
@@ -60,12 +63,21 @@ class TRPOBuffer:
         
         # the next two lines implement GAE-Lambda advantage calculation
         deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
+        self.adv_buf[path_slice] = self._discount_cum_sum(deltas, self.gamma * self.lam)
         
         # the next line computes rews-to-go, to be targets for the value function
-        self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
+        self.ret_buf[path_slice] = self._discount_cum_sum(rews, self.gamma)[:-1]
         
         self.path_start_idx = self.ptr
+    
+    def _discount_cum_sum(self, x, discount):
+        """Compute the discouted cumulative sums of vectors""" 
+        discount_cum_sums = []
+        discount_cum_sum = 0
+        for element in reversed(x):
+            discount_cum_sum = element + discount * discount_cum_sum
+            discount_cum_sums.append(discount_cum_sum)
+        return list(reversed(discount_cum_sums))
 
     def get(self):
         """
@@ -150,6 +162,7 @@ class TRPOAgent(object):
         self.hessian_vector_ph = tf.placeholder(tf.float32, shape=self.kl_grads.shape)
         self.hession_vector_product = self._flat_var(\
                     tf.gradients(tf.reduce_sum(self.kl_grads * self.hessian_vector_ph), self.pi_params))
+        #I don't know why to take the following step, but this step significantly improves the performance
         self.hession_vector_product += 0.1 * self.hessian_vector_ph
 
         self.new_pi_params_ph = tf.placeholder(tf.float32, shape=self.flat_pi_parms.shape)
@@ -225,6 +238,7 @@ class TRPORunner(object):
                  delta=0.01,
                  backtrack_iter=10,
                  backtrack_coeff=0.8,
+                 train_v_iter=80,
                  logger_kwargs=dict()):
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
@@ -234,6 +248,7 @@ class TRPORunner(object):
         self.delta = delta
         self.backtrack_iter = backtrack_iter
         self.backtrack_coeff = backtrack_coeff
+        self.train_v_iter = train_v_iter
         self.logger_kwargs = logger_kwargs
 
         self.env = gym.make(env_name)
@@ -249,24 +264,16 @@ class TRPORunner(object):
         self.agent = TRPOAgent(obs_dim, action_space)
         self.buffer = TRPOBuffer(obs_dim, action_space, train_epoch_len, gamma, lam)
 
-    def _discounted_cumulative_sum(self, x, discount, initial=0):
-        discounted_cumulative_sums = []
-        discounted_cumulative_sum = initial
-        for element in reversed(x):
-            discounted_cumulative_sum = element + discount * discounted_cumulative_sum
-            discounted_cumulative_sums.append(discounted_cumulative_sum)
-        return list(reversed(discounted_cumulative_sums))
-
     def _conjugate_gradient(self, Ax, b):
         x = np.zeros_like(b)
         r = b.copy()
         p = r.copy()
         k = 0
         for _ in range(self.cg_iters):
-            alpha = np.dot(r, r) / (np.dot(p, Ax(p)) + 1e-8)
+            alpha = np.dot(r, r) / (np.dot(p, Ax(p)) + EPS)
             x_next = x + alpha * p
             r_next = r - alpha * Ax(p)
-            beta = np.dot(r_next, r_next) / (np.dot(r, r) + 1e-8)
+            beta = np.dot(r_next, r_next) / (np.dot(r, r) + EPS)
             p_next = r_next + beta * p
             x, r, p = x_next, r_next, p_next
         return x
@@ -293,7 +300,6 @@ class TRPORunner(object):
             self.buffer.finish_path(last_v)
                 
             logger.store(EpRet=traj_r, EpLen=traj_len)
-        
 
     def _run_train_phase(self, epoch_len, logger):
         self._colloct_trajectories(epoch_len, self.max_traj, logger)
@@ -309,22 +315,22 @@ class TRPORunner(object):
         Hx = self.agent.get_hessian_vector_product(feed_dict)
         x = self._conjugate_gradient(Hx, gradients)
 
-        delta = np.sqrt(2 * self.delta / (np.dot(x, Hx(x)) + 1e-8)) * x
+        update_direction = np.sqrt(2 * self.delta / (np.dot(x, Hx(x)) + EPS)) * x
         for j in range(self.backtrack_iter):
             old_pi_params = self.agent.sess.run(self.agent.flat_pi_parms)
-            new_pi_params = old_pi_params - (self.backtrack_coeff**j) * delta
+            new_pi_params = old_pi_params - (self.backtrack_coeff**j) * update_direction
             self.agent.update_pi_params(new_pi_params)
             kl = self.agent.get_kl(feed_dict)
             _, new_pi_loss, _ = self.agent.get_gradients_and_losses(feed_dict)
             if kl < self.delta and new_pi_loss < old_pi_loss:
-                logger.log('Accepting new params at step %d of line search.'%j)
+                logger.log(f'Accepting new params at step {j} of line search.')
                 break
             else:
                 self.agent.update_pi_params(old_pi_params)
             if j == self.backtrack_iter - 1:
-                logger.log('Line search failed! Keeping old params.')
+                logger.log('Line search failed! Keeping old params.', color='red')
         
-        for _ in range(80):
+        for _ in range(self.train_v_iter):
             self.agent.update_v_params(feed_dict)
         self.agent.sync_old_pi_parmas()
 

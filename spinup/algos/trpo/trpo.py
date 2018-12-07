@@ -1,4 +1,5 @@
 
+import time
 import numpy as np
 import tensorflow as tf
 from tensorflow.distributions import Categorical
@@ -6,7 +7,6 @@ import gym
 from gym.spaces import Discrete, Box
 
 from spinup.utils.logx import EpochLogger
-from spinup.algos.trpo.core import assign_params_from_flat
 
 
 class TRPONet(object):
@@ -20,6 +20,9 @@ class TRPONet(object):
         with tf.variable_scope('pi'):
             if isinstance(action_space, Discrete):
                 self.dist = self._categorical_policy(obs, action_space.n, hidden_sizes, activation, output_activation)
+        with tf.variable_scope('old_pi'):
+            if isinstance(action_space, Discrete):
+                self.old_dist = self._categorical_policy(obs, action_space.n, hidden_sizes, activation, output_activation)
         with tf.variable_scope('v'):
             self.v = tf.squeeze(self._mlp(obs, list(hidden_sizes)+[1], activation, output_activation), axis=1)
 
@@ -34,7 +37,7 @@ class TRPONet(object):
         return dist
 
     def network_output(self):
-        return self.dist, self.v
+        return self.dist, self.old_dist, self.v
 
     
 class TRPOAgent(object):
@@ -48,66 +51,64 @@ class TRPOAgent(object):
         self.action_space = action_space
         self.v_lr = v_lr
 
-        self.obs_ph, self.act_ph, self.ret_ph, self.adv_ph,\
-                self.old_log_prob_ph, self.old_prob_all_ph = self._create_placeholder()
+        self.obs_ph, self.act_ph, self.ret_ph, self.adv_ph = self._create_placeholder()
 
-        self.dist, self.v = self._create_network()
+        self.dist, self.old_dist, self.v = self._create_network()
 
         self.act = self.dist.sample()
-        self.old_log_prob = self.dist.log_prob(self.act)
         self.log_prob = self.dist.log_prob(self.act_ph)
+        self.old_log_prob = self.old_dist.log_prob(self.act_ph)
 
-        radio = tf.exp(self.log_prob - self.old_log_prob_ph)
-        self.pi_loss = -tf.reduce_mean(radio * self.adv_ph)
+        self.radio = tf.exp(self.log_prob - self.old_log_prob)
+        self.pi_loss = -tf.reduce_mean(self.radio * self.adv_ph)
         self.v_loss = tf.reduce_mean((self.ret_ph - self.v)**2)
 
         self.train_v = tf.train.AdamOptimizer(self.v_lr).minimize(self.v_loss)
 
-        self.prob_all = self.dist.probs
-        kl = tf.reduce_sum(self.prob_all * (tf.log(self.prob_all) - tf.log(self.old_prob_all_ph)), axis=1)
-        self.kl = tf.reduce_mean(kl)
+        self.kl = self.old_dist.kl_divergence(self.dist)
+        self.kl = tf.reduce_mean(self.kl)
 
-        self.pi_params = self._get_var('pi')
-        self.flat_pi_parms = self._flat_grad(self.pi_params)
-        self.pi_grads = self._flat_grad(tf.gradients(self.pi_loss, self.pi_params))
-        self.kl_grads = self._flat_grad(tf.gradients(self.kl, self.pi_params))
+        self.pi_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='pi')
+        self.flat_pi_parms = self._flat_var(self.pi_params)
+        self.pi_grads = self._flat_var(tf.gradients(self.pi_loss, self.pi_params))
+        self.kl_grads = self._flat_var(tf.gradients(self.kl, self.pi_params))
+        
         self.hessian_vector_ph = tf.placeholder(tf.float32, shape=self.kl_grads.shape)
-        self.hession_vector_product = self._flat_grad(\
+        self.hession_vector_product = self._flat_var(\
                     tf.gradients(tf.reduce_sum(self.kl_grads * self.hessian_vector_ph), self.pi_params))
         self.hession_vector_product += 0.1 * self.hessian_vector_ph
 
         self.new_pi_params_ph = tf.placeholder(tf.float32, shape=self.flat_pi_parms.shape)
-        # self.update_pi_op = self._get_update_pi_op(self.new_pi_params_ph)
-        self.update_pi_op = assign_params_from_flat(self.new_pi_params_ph, self.pi_params)
+        self.update_pi_op = self._get_update_pi_op(self.new_pi_params_ph)
+
+        self.old_pi_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='old_pi')
+        self.sync_old_params_op = tf.group([tf.assign(old_params, params)\
+                                    for old_params, params in zip(self.old_pi_params, self.pi_params)])
 
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
+        self.sess.run(self.sync_old_params_op)
 
     def _create_placeholder(self):
         obs_ph = tf.placeholder(tf.float32, shape=(None, self.obs_dim))
         if isinstance(self.action_space, Discrete):
             act_ph = tf.placeholder(tf.int32, shape=(None, ))
-            old_prob_all_ph = tf.placeholder(tf.float32, shape=(None, self.action_space.n))
         if isinstance(self.action_space, Box):
             act_ph = tf.placeholder(tf.float32, shape=(None, self.action_space.shape[0]))
         ret_ph = tf.placeholder(tf.float32, shape=(None, ))
         adv_ph = tf.placeholder(tf.float32, shape=(None, ))
-        old_log_prob_ph = tf.placeholder(tf.float32, shape=(None, ))
-        return obs_ph, act_ph, ret_ph, adv_ph, old_log_prob_ph, old_prob_all_ph
+        return obs_ph, act_ph, ret_ph, adv_ph
 
     def _create_network(self):
         trpo_net = TRPONet(self.obs_ph, self.action_space)
         return trpo_net.network_output()
 
-    def _get_var(self, scope):
-        return [x for x in tf.global_variables() if scope in x.name]
-
-    def _flat_grad(self, grads):
+    def _flat_var(self, grads):
         return tf.concat([tf.reshape(grad, (-1, )) for grad in grads], axis=0)
 
     def select_action(self, obs):
-        act, v, log_prob, prob_all = self.sess.run([self.act, self.v, self.old_log_prob, self.prob_all], feed_dict={self.obs_ph: obs})
-        return act[0], v[0], log_prob[0], prob_all[0]
+        act, v = self.sess.run([self.act, self.v], feed_dict={self.obs_ph: obs})
+        return act[0], v[0]
 
     def get_hessian_vector_product(self, feed_dict):
         return lambda x: self.sess.run(self.hession_vector_product, feed_dict={**feed_dict, self.hessian_vector_ph: x})
@@ -127,11 +128,14 @@ class TRPOAgent(object):
         return update_pi_op
 
     def update_pi_params(self, new_pi_params):
-        self.sess.run(self.update_pi_op, feed_dict={self.new_pi_params_ph: new_pi_params})
+        return self.sess.run(self.update_pi_op, feed_dict={self.new_pi_params_ph: new_pi_params})
 
     def update_v_params(self, feed_dict):
         return self.sess.run(self.train_v, feed_dict=feed_dict)
     
+    def sync_old_pi_parmas(self):
+        self.sess.run(self.sync_old_params_op)
+
 
 class TRPORunner(object):
 
@@ -171,7 +175,6 @@ class TRPORunner(object):
         self.agent = TRPOAgent(obs_dim, action_space)
 
         self.obs_buffer, self.act_buffer, self.reward_buffer, self.v_buffer = [], [], [], []
-        self.old_log_probs, self.old_prob_all = [], []
 
     def _discounted_cumulative_sum(self, x, discount, initial=0):
         discounted_cumulative_sums = []
@@ -190,28 +193,9 @@ class TRPORunner(object):
             alpha = np.dot(r, r) / (np.dot(p, Ax(p)) + 1e-8)
             x_next = x + alpha * p
             r_next = r - alpha * Ax(p)
-            beta = np.dot(r_next, r_next) / np.dot(r, r)
+            beta = np.dot(r_next, r_next) / (np.dot(r, r) + 1e-8)
             p_next = r_next + beta * p
             x, r, p = x_next, r_next, p_next
-        return x
-
-    def cg(self, Ax, b):
-        """
-        Conjugate gradient algorithm
-        (see https://en.wikipedia.org/wiki/Conjugate_gradient_method)
-        """
-        x = np.zeros_like(b)
-        r = b.copy() # Note: should be 'b - Ax(x)', but for x=0, Ax(x)=0. Change if doing warm start.
-        p = r.copy()
-        r_dot_old = np.dot(r,r)
-        for _ in range(self.cg_iters):
-            z = Ax(p)
-            alpha = r_dot_old / (np.dot(p, z) + 1e-8)
-            x += alpha * p
-            r -= alpha * z
-            r_dot_new = np.dot(r,r)
-            p = r + (r_dot_new / r_dot_old) * p
-            r_dot_old = r_dot_new
         return x
             
     def _colloct_trajectory(self, max_traj, logger):
@@ -219,20 +203,16 @@ class TRPORunner(object):
         obs = self.env.reset()
         traj_r = 0
         while(traj_len <= (max_traj-1) and not done):
-            act, v, log_prob, prob_all = self.agent.select_action(obs[None, :])
-            # print(act)
+            act, v = self.agent.select_action(obs[None, :])
             next_obs, reward, done, _ = self.env.step(act)
             self.obs_buffer.append(obs)
             self.act_buffer.append(act)
             self.reward_buffer.append(reward)
             self.v_buffer.append(v)
-            self.old_log_probs.append(log_prob)
-            self.old_prob_all.append(prob_all)
 
             traj_len += 1
             traj_r += reward
             obs = next_obs
-        # print(traj_r)
         logger.store(EpRet=traj_r, EpLen=traj_len)
         return done, next_obs, traj_len
 
@@ -257,22 +237,17 @@ class TRPORunner(object):
             obs_buffer = np.array(self.obs_buffer)
             act_buffer = np.array(self.act_buffer)
             ret_buffer = np.array(rewards_to_go)
-            old_prob_all = np.array(self.old_prob_all)
-            old_log_probs = np.array(self.old_log_probs)
 
             feed_dict = {
                 self.agent.obs_ph: obs_buffer,
                 self.agent.act_ph: act_buffer,
                 self.agent.ret_ph: ret_buffer,
                 self.agent.adv_ph: adv_buffer,
-                self.agent.old_log_prob_ph: old_log_probs,
-                self.agent.old_prob_all_ph: old_prob_all,
             }
-
+            ra = self.agent.sess.run(self.agent.kl, feed_dict=feed_dict)
             gradients, old_pi_loss, old_v_loss = self.agent.get_gradients_and_losses(feed_dict)
             Hx = self.agent.get_hessian_vector_product(feed_dict)
-            # x = self._conjugate_gradient(Hx, gradients)
-            x = self.cg(Hx, gradients)
+            x = self._conjugate_gradient(Hx, gradients)
 
             delta = np.sqrt(2 * self.delta / (np.dot(x, Hx(x)) + 1e-8)) * x
             # for j in range(self.backtrack_iter):
@@ -292,15 +267,16 @@ class TRPORunner(object):
             
             for _ in range(1):
                 self.agent.update_v_params(feed_dict)
-            
+            self.agent.sync_old_pi_parmas()
+
             logger.store(PiLoss=old_pi_loss, VLoss=old_v_loss, KL=kl,\
                          DeltaPiLoss=new_pi_loss-old_pi_loss)
-
             self.obs_buffer, self.act_buffer, self.reward_buffer, self.v_buffer = [], [], [], []
             self.old_log_probs, self.old_prob_all = [], []
 
     def run_experiment(self):
         logger = EpochLogger(**self.logger_kwargs)
+        start_time = time.time()
         for epoch in range(self.epochs):
             self._run_train_phase(self.train_epoch_len, logger)
             logger.log_tabular('Epoch', epoch + 1)
@@ -311,6 +287,7 @@ class TRPORunner(object):
             logger.log_tabular('KL', average_only=True)
             logger.log_tabular('DeltaPiLoss', average_only=True)
             logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
+            logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
 
 

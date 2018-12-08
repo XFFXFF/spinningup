@@ -5,7 +5,7 @@ import gym
 import numpy as np
 import tensorflow as tf
 from gym.spaces import Box, Discrete
-from tensorflow.distributions import Categorical
+from tensorflow.distributions import Categorical, Normal
 
 from spinup.utils.logx import EpochLogger
 
@@ -23,6 +23,8 @@ class TRPOBuffer:
         self.obs_buf = np.zeros((size, obs_dim), dtype=np.float32)
         if isinstance(action_space, Discrete):
             self.act_buf = np.zeros(size, dtype=np.int32)
+        if isinstance(action_space, Box):
+            self.act_buf = np.zeros((size, action_space.shape[0]), dtype=np.float32)
         self.val_buf = np.zeros(size, dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
         self.ret_buf = np.zeros(size, dtype=np.float32)
@@ -106,9 +108,13 @@ class TRPONet(object):
         with tf.variable_scope('pi'):
             if isinstance(action_space, Discrete):
                 self.dist = self._categorical_policy(obs, action_space.n, hidden_sizes, activation, output_activation)
+            if isinstance(action_space, Box):
+                self.dist = self._gaussian_policy(obs, action_space.shape[0], hidden_sizes, activation, output_activation)
         with tf.variable_scope('old_pi'):
             if isinstance(action_space, Discrete):
                 self.old_dist = self._categorical_policy(obs, action_space.n, hidden_sizes, activation, output_activation)
+            if isinstance(action_space, Box):
+                self.old_dist = self._gaussian_policy(obs, action_space.shape[0], hidden_sizes, activation, output_activation)
         with tf.variable_scope('v'):
             self.v = tf.squeeze(self._mlp(obs, list(hidden_sizes)+[1], activation, output_activation), axis=1)
 
@@ -120,6 +126,13 @@ class TRPONet(object):
     def _categorical_policy(self, obs, n_act, hidden_sizes, activation, output_activation):
         logits = self._mlp(obs, list(hidden_sizes)+[n_act], activation, output_activation)
         dist = Categorical(logits=logits)
+        return dist
+
+    def _gaussian_policy(self, obs, act_dim, hidden_sizes, activation, output_activation):
+        mu = self._mlp(obs, list(hidden_sizes)+[act_dim], activation, output_activation)
+        log_std = tf.get_variable(name='log_std', initializer=0.5*np.ones(act_dim, dtype=np.float32))
+        std = tf.exp(log_std)
+        dist = Normal(loc=mu, scale=std)
         return dist
 
     def network_output(self):
@@ -142,8 +155,12 @@ class TRPOAgent(object):
         self.dist, self.old_dist, self.v = self._create_network()
 
         self.act = self.dist.sample()
-        self.log_prob = self.dist.log_prob(self.act_ph)
-        self.old_log_prob = self.old_dist.log_prob(self.act_ph)
+        if isinstance(action_space, Discrete):
+            self.log_prob = self.dist.log_prob(self.act_ph)
+            self.old_log_prob = self.old_dist.log_prob(self.act_ph)
+        if isinstance(action_space, Box):
+            self.log_prob = tf.reduce_sum(self.dist.log_prob(self.act_ph), axis=1)
+            self.old_log_prob = tf.reduce_sum(self.old_dist.log_prob(self.act_ph), axis=1)
 
         self.radio = tf.exp(self.log_prob - self.old_log_prob)
         self.pi_loss = -tf.reduce_mean(self.radio * self.adv_ph)
@@ -357,7 +374,7 @@ class TRPORunner(object):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='CartPole-v0')
+    parser.add_argument('--env', type=str, default='HalfCheetah-v2')
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--exp_name', type=str, default='trpo')

@@ -105,6 +105,18 @@ class TRPONet(object):
                  hidden_sizes=(64, 64),
                  activation=tf.nn.tanh,
                  output_activation=None):
+        """Initialize the Network.
+
+        Args:
+            obs: tf placeholer, the observation we get from environment.
+            act_space: gym.spaces.
+            hidden_sizes: tuple, the dimensions of the hidden layers.
+            activation: tf activation function before the output layer.
+            output_activation: tf activation function of the output layer.
+        """
+        tf.logging.info(f'\t hidden_sizes: {hidden_sizes}')
+        tf.logging.info(f'\t activation: {activation}')
+        tf.logging.info(f'\t output_activation: {output_activation}')
         with tf.variable_scope('pi'):
             if isinstance(action_space, Discrete):
                 self.dist = self._categorical_policy(obs, action_space.n, hidden_sizes, activation, output_activation)
@@ -124,11 +136,21 @@ class TRPONet(object):
         return tf.layers.dense(inputs=x, units=hidden_sizes[-1], activation=output_activation)
 
     def _categorical_policy(self, obs, n_act, hidden_sizes, activation, output_activation):
+        """Categorical policy for discrete actions
+        
+        Returns: 
+            dist: Categorical distribution.
+        """
         logits = self._mlp(obs, list(hidden_sizes)+[n_act], activation, output_activation)
         dist = Categorical(logits=logits)
         return dist
 
     def _gaussian_policy(self, obs, act_dim, hidden_sizes, activation, output_activation):
+        """Gaussian policy for continuous actions.
+
+        Returns:
+            dist: Gaussian distribution.
+        """
         mu = self._mlp(obs, list(hidden_sizes)+[act_dim], activation, output_activation)
         log_std = tf.get_variable(name='log_std', initializer=0.5*np.ones(act_dim, dtype=np.float32))
         std = tf.exp(log_std)
@@ -146,6 +168,16 @@ class TRPOAgent(object):
                  action_space, 
                  v_lr=0.001,
                  ):
+        """Initialize the Agent.
+
+        Args:
+            obs_dim: int, The dimensions of observation vector.
+            act_space: gym.spaces.
+            v_lr: float, Learning rate for Q-networks.
+        """
+        tf.logging.info(f'\t observation_dim: {obs_dim}')
+        tf.logging.info(f'\t action_space: {action_space}')
+        tf.logging.info(f'\t v_lr: {v_lr}')
         self.obs_dim = obs_dim
         self.action_space = action_space
         self.v_lr = v_lr
@@ -253,19 +285,58 @@ class TRPORunner(object):
                  max_traj=None,
                  cg_iters=10,
                  delta=0.01,
-                 backtrack_iter=10,
+                 backtrack_iters=10,
                  backtrack_coeff=0.8,
-                 train_v_iter=80,
+                 train_v_iters=80,
                  logger_kwargs=dict()):
+        """Initialize the Runner object.
+
+        Args:
+            env_name: str, Name of the environment.
+            seed: int, Seed for random number generators.
+            epochs: int, Number of epochs to run and train agent.
+            gamma: float, Discount factor, (Always between 0 and 1.)
+            lam: float, Lambda for GAE-Lambda. (Always between 0 and 1, close to 1.)
+            train_epoch_len: int, Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each training epoch.
+            max_traj: int, Maximum number of a trajectory. 
+            cg_iters: int, Number of iterations of conjugate gradient to perform. 
+                Increasing this will lead to a more accurate approximation
+                to :math:`H^{-1} g`, and possibly slightly-improved performance,
+                but at the cost of slowing things down. 
+            delta: float, KL-divergence limit for TRPO / NPG update. 
+                (Should be small for stability. Values like 0.01, 0.05.) 
+            backtrack_iters: int, Maximum number of steps allowed in the 
+                backtracking line search. Since the line search usually doesn't 
+                backtrack, and usually only steps back once when it does, this
+                hyperparameter doesn't often matter.
+            backtrack_coeff: float, How far back to step during backtracking line
+                search. (Always between 0 and 1, usually above 0.5.)
+            train_v_iters: train_v_iters (int): Number of gradient descent steps to take on 
+                value function per epoch.
+            logger_kwargs: int, Keyword args for Epochlogger.
+        """
+
+        tf.logging.info(f'\t env_name: {env_name}')
+        tf.logging.info(f'\t seed: {seed}')
+        tf.logging.info(f'\t epochs: {epochs}')
+        tf.logging.info(f'\t gamma: {gamma}')
+        tf.logging.info(f'\t lam: {lam}')
+        tf.logging.info(f'\t train_epoch_len: {train_epoch_len}')
+        tf.logging.info(f'\t cg_iters: {cg_iters}')
+        tf.logging.info(f'\t delta: {delta}')
+        tf.logging.info(f'\t backtrack_iters: {backtrack_iters}')
+        tf.logging.info(f'\t backtrack_coeff: {backtrack_coeff}')
+        tf.logging.info(f'\t train_v_iterss: {train_v_iters}')
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
         self.gamma = gamma
         self.lam = lam
         self.cg_iters = cg_iters
         self.delta = delta
-        self.backtrack_iter = backtrack_iter
+        self.backtrack_iters = backtrack_iters
         self.backtrack_coeff = backtrack_coeff
-        self.train_v_iter = train_v_iter
+        self.train_v_iters = train_v_iters
         self.logger_kwargs = logger_kwargs
 
         self.env = gym.make(env_name)
@@ -282,6 +353,10 @@ class TRPORunner(object):
         self.buffer = TRPOBuffer(obs_dim, action_space, train_epoch_len, gamma, lam)
 
     def _conjugate_gradient(self, Ax, b):
+        """
+        Conjugate gradient algorithm
+        (see https://en.wikipedia.org/wiki/Conjugate_gradient_method)
+        """
         x = np.zeros_like(b)
         r = b.copy()
         p = r.copy()
@@ -296,6 +371,7 @@ class TRPORunner(object):
         return x
             
     def _colloct_trajectories(self, epoch_len, max_traj, logger):
+        """Collect set of trajectories by running the policy pi"""
         step = 0
         while step < epoch_len:
             traj_len, traj_r, done = 0, 0, False
@@ -319,6 +395,13 @@ class TRPORunner(object):
             logger.store(EpRet=traj_r, EpLen=traj_len)
 
     def _run_train_phase(self, epoch_len, logger):
+        """Run train phase.
+
+        Args:
+            epoch_len: int, Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each training epoch.
+            logger: object, Object to store the information.
+        """
         self._colloct_trajectories(epoch_len, self.max_traj, logger)
 
         obs_buffer, act_buffer, adv_buffer, ret_buffer = self.buffer.get()
@@ -333,7 +416,7 @@ class TRPORunner(object):
         x = self._conjugate_gradient(Hx, gradients)
 
         update_direction = np.sqrt(2 * self.delta / (np.dot(x, Hx(x)) + EPS)) * x
-        for j in range(self.backtrack_iter):
+        for j in range(self.backtrack_iters):
             old_pi_params = self.agent.sess.run(self.agent.flat_pi_parms)
             new_pi_params = old_pi_params - (self.backtrack_coeff**j) * update_direction
             self.agent.update_pi_params(new_pi_params)
@@ -344,10 +427,10 @@ class TRPORunner(object):
                 break
             else:
                 self.agent.update_pi_params(old_pi_params)
-            if j == self.backtrack_iter - 1:
+            if j == self.backtrack_iters - 1:
                 logger.log('Line search failed! Keeping old params.', color='red')
         
-        for _ in range(self.train_v_iter):
+        for _ in range(self.train_v_iters):
             self.agent.update_v_params(feed_dict)
         self.agent.sync_old_pi_parmas()
 
@@ -355,6 +438,7 @@ class TRPORunner(object):
                         DeltaPiLoss=new_pi_loss-old_pi_loss)
 
     def run_experiment(self):
+        """Run a full experiment, spread over multiple iterations."""
         logger = EpochLogger(**self.logger_kwargs)
         start_time = time.time()
         for epoch in range(self.epochs):
@@ -374,7 +458,7 @@ class TRPORunner(object):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='HalfCheetah-v2')
+    parser.add_argument('--env', type=str, default='Pendulum-v0')
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--exp_name', type=str, default='trpo')
@@ -382,5 +466,7 @@ if __name__ == '__main__':
 
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)
+
+    tf.logging.set_verbosity(tf.logging.INFO)
     Runner = TRPORunner(args.env, args.seed, args.epochs, logger_kwargs=logger_kwargs)
     Runner.run_experiment()

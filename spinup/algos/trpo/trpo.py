@@ -103,7 +103,7 @@ class TRPONet(object):
                  obs,
                  action_space,
                  hidden_sizes=(64, 64),
-                 activation=tf.nn.relu,
+                 activation=tf.nn.tanh,
                  output_activation=None):
         with tf.variable_scope('pi'):
             if isinstance(action_space, Discrete):

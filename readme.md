@@ -41,14 +41,20 @@ I use [gin-config](https://github.com/google/gin-config), a very simple but powe
 ## Running Tests
 ### Training a model
 ```
-cd spinningup/spinup/algos/vpg
-python -m vpg --env Pendulum-v0 
+cd spinningup/spinup/algos/ddpg
+python -m ddpg --env Pendulum-v0 --seed 0
 ```
-### Test a model with rendering 
+### Testing a model with rendering 
 ```
-python -m vpg --env Pendulum-v0 --test
+cd spinningup/spinup/algos/ddpg
+python -m ddpg --env Pendulum-v0 --seed 0 --test
 ```
-
+### Plotting the performance(average epoch return)
+```
+cd spinningup
+python -m plot data/ddpg/Pendulum-v0/seed0
+```
+See the page on [plotting results](http://spinningup.openai.com/en/latest/utils/plotter.html) for documentation of the plotter.
 ## References
 ### VPG
 [Vanilla Policy Gradient](http://spinningup.openai.com/en/latest/algorithms/vpg.html), OpenAI/Spiningup.  

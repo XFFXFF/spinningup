@@ -161,8 +161,8 @@ def make_plots(all_logdirs, legend=None, xaxis=None, values=None, count=False,
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('logdir', nargs='*')
-    parser.add_argument('--legend', '-l', nargs='*', required=True)
+    parser.add_argument('logdir', nargs='*', default=['/home/xff/Code/spinningup/data/trpo/Pendulum-v0/seed'])
+    parser.add_argument('--legend', '-l', nargs='*', default=["seed0", "seed100"])
     parser.add_argument('--xaxis', '-x', default='TotalEnvInteracts')
     parser.add_argument('--value', '-y', default='Performance', nargs='*')
     parser.add_argument('--count', action='store_true')
@@ -219,7 +219,7 @@ def main():
             curves from logdirs that do not contain these substrings.
 
     """
-
+    print(args.legend)
     make_plots(args.logdir, args.legend, args.xaxis, args.value, args.count, 
                smooth=args.smooth, select=args.select, exclude=args.exclude,
                estimator=args.est)

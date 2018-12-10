@@ -41,18 +41,12 @@ I use [gin-config](https://github.com/google/gin-config), a very simple but powe
 ## Running Tests
 ### Training a model
 ```
-cd spinningup
-python -m spinup.run --algo ddpg \
-    --env Pendulum-v0 \
-    --gin_files spinup/algos/ddpg/ddpg.gin \
-    --gin_bindings Runner.train_epoch_len=4000 DDPGAgent.q_lr=0.001
+cd spinningup/spinup/algos/vpg
+python -m vpg --env Pendulum-v0 
 ```
 ### Test a model with rendering 
 ```
-python -m spinup.run --algo ddpg \
-    --env Pendulum-v0 \
-    --gin_files spinup/algos/ddpg/ddpg.gin \
-    --test
+python -m vpg --env Pendulum-v0 --test
 ```
 
 ## References

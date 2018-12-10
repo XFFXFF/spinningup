@@ -1,5 +1,5 @@
 
-import spinup.algos.vpg.vpg
+import __main__
 import gin.tf.external_configurables
 
 VPGRunner.gamma = 0.99

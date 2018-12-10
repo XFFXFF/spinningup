@@ -14,8 +14,9 @@ from spinup.utils.mpi_tf import MpiAdamOptimizer, sync_all_params
 from spinup.utils.mpi_tools import mpi_fork, proc_id, mpi_statistics_scalar, num_procs
 
 
-def load_gin_configs(gin_file, gin_bindings):
+def load_gin_configs(gin_file, gin_bindings=None):
     gin.parse_config_files_and_bindings(gin_file, bindings=gin_bindings, skip_unknown=False)
+
 
 @gin.configurable
 class VPGNet(object):
@@ -363,12 +364,10 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='Pendulum-v0')
-    parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--cpu', type=int, default=2)
     parser.add_argument('--exp_name', type=str, default='vpg')
     parser.add_argument('--gin_files', nargs='+', default=["vpg.gin"])
-    parser.add_argument('--gin_bindings', nargs='+', default=[])
     parser.add_argument('--test', action='store_true')
     
     args = parser.parse_args()
@@ -378,9 +377,11 @@ if __name__ == '__main__':
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)
 
-    load_gin_configs(args.gin_files, args.gin_bindings)
+    load_gin_configs(args.gin_files)
+
     tf.logging.set_verbosity(tf.logging.INFO)
-    runner = VPGRunner(args.env, args.seed, args.epochs, logger_kwargs=logger_kwargs)
+    
+    runner = VPGRunner(args.env, args.seed, logger_kwargs=logger_kwargs)
     if args.test:
         runner.run_test_and_render()
     else:

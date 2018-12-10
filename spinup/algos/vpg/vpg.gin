@@ -2,6 +2,7 @@
 import __main__
 import gin.tf.external_configurables
 
+VPGRunner.epochs = 200
 VPGRunner.gamma = 0.99
 VPGRunner.lam = 0.95
 VPGRunner.max_traj_len = None

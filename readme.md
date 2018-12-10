@@ -52,7 +52,7 @@ python -m ddpg --env Pendulum-v0 --seed 0 --test
 ### Plotting the performance(average epoch return)
 ```
 cd spinningup
-python -m plot data/ddpg/Pendulum-v0/seed0
+python -m spinup.plot data/ddpg/Pendulum-v0/seed0
 ```
 See the page on [plotting results](http://spinningup.openai.com/en/latest/utils/plotter.html) for documentation of the plotter.
 ## References

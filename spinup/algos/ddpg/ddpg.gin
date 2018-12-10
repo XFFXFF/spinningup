@@ -1,5 +1,5 @@
 
-import spinup.algos.ddpg.ddpg
+import __main__
 import gin.tf.external_configurables
 
 DDPGAgent.gamma = 0.98

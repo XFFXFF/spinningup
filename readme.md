@@ -12,7 +12,9 @@ My design principle:
 
 ## Algorithms
 * [VPG](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/vpg)
+* [TRPO](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/trpo)
 * [DDPG](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/ddpg)
+
 
 
 ## Installation
@@ -44,11 +46,6 @@ I use [gin-config](https://github.com/google/gin-config), a very simple but powe
 cd spinningup/spinup/algos/ddpg
 python -m ddpg --env Pendulum-v0 --seed 0
 ```
-### Testing a model with rendering 
-```
-cd spinningup/spinup/algos/ddpg
-python -m ddpg --env Pendulum-v0 --seed 0 --test
-```
 ### Plotting the performance(average epoch return)
 ```
 cd spinningup
@@ -60,6 +57,11 @@ See the page on [plotting results](http://spinningup.openai.com/en/latest/utils/
 [Vanilla Policy Gradient](http://spinningup.openai.com/en/latest/algorithms/vpg.html), OpenAI/Spiningup.  
 [Policy Gradient Methods for Reinforcement Learning with Function Approximation](https://papers.nips.cc/paper/1713-policy-gradient-methods-for-reinforcement-learning-with-function-approximation.pdf), Sutton et al. 2000.  
 [High Dimensional Continuous Control Using Generalized Advantage Estimation](https://arxiv.org/abs/1506.02438), Schulman et al. 2016(b)
+### TRPO
+[Trust Region Policy Optimization](https://arxiv.org/abs/1502.05477), Schulman et al. 2015.  
+[Advanced policy gradients (natural gradient, importance sampling)](http://rail.eecs.berkeley.edu/deeprlcourse-fa17/f17docs/lecture_13_advanced_pg.pdf), Joshua Achiam. 2017.  
+[Trust Region Policy Optimization](http://spinningup.openai.com/en/latest/algorithms/trpo.html), OpenAI/Spiningup.  
+
 ### DDPG
 [Deep Deterministic Policy Gradient](http://spinningup.openai.com/en/latest/algorithms/ddpg.html), OpenAI/Spinningup.   
 [Deterministic Policy Gradient Algorithms](http://proceedings.mlr.press/v32/silver14.pdf), Silver et al. 2014.  

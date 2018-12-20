@@ -23,15 +23,7 @@ My design principle:
 conda create -n spinningup python=3.6
 source activate spinningup
 ```
-### Installing OpenMPI
-#### Ubuntu 
-```
-sudo apt-get update && sudo apt-get install libopenmpi-dev
-```
-#### Mac OS X
-```
-brew install openmpi
-```
+
 ### Installing Spinning Up
 ```
 git clone https://github.com/XFFXFF/spinningup.git

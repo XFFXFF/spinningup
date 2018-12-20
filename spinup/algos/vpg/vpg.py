@@ -11,7 +11,6 @@ from tensorflow.distributions import Categorical, Normal
 from spinup.utils.checkpointer import get_latest_check_num
 from spinup.utils.logx import EpochLogger
 from spinup.utils.mpi_tf import MpiAdamOptimizer, sync_all_params
-from spinup.utils.mpi_tools import mpi_fork, proc_id, mpi_statistics_scalar, num_procs
 
 
 def load_gin_configs(gin_file, gin_bindings=None):
@@ -198,11 +197,11 @@ class VPGRunner(object):
         tf.logging.info('\t epochs: %d', epochs)
         tf.logging.info('\t train_epoch_len: %d', train_epoch_len)
         tf.logging.info('\t test_epoch_len: %d', test_epoch_len)
-        self.seed = seed + 1000 * proc_id()
+        self.seed = seed
         self.epochs = epochs
         self.gamma = gamma
         self.lam = lam
-        self.train_epoch_len = int(train_epoch_len / num_procs())
+        self.train_epoch_len = train_epoch_len
         self.test_epoch_len = test_epoch_len
         self.train_v_iters = train_v_iters
         self.logger_kwargs = logger_kwargs
@@ -281,9 +280,7 @@ class VPGRunner(object):
             delta = np.array(self.reward_buffer) + np.array(self.v_buffer[1:]) * self.gamma - np.array(self.v_buffer[:-1])
             adv_buffer = self.discounted_cumulative_sum(delta, self.gamma*self.lam, 0)
             adv_buffer = np.array(adv_buffer)
-            # adv_buffer = (adv_buffer - np.mean(adv_buffer)) / np.std(adv_buffer)
-            adv_mean, adv_std = mpi_statistics_scalar(adv_buffer)
-            adv_buffer = (adv_buffer - adv_mean) / adv_std
+            adv_buffer = (adv_buffer - np.mean(adv_buffer)) / np.std(adv_buffer)
             obs_buffer = np.array(self.obs_buffer)
             act_buffer = np.array(self.act_buffer)
             ret_buffer = np.array(rewards_to_go)
@@ -365,14 +362,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='Pendulum-v0')
     parser.add_argument('--seed', '-s', type=int, default=0)
-    parser.add_argument('--cpu', type=int, default=2)
     parser.add_argument('--exp_name', type=str, default='vpg')
     parser.add_argument('--gin_files', nargs='+', default=["vpg.gin"])
     parser.add_argument('--test', action='store_true')
-    
     args = parser.parse_args()
-
-    mpi_fork(args.cpu)
 
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)

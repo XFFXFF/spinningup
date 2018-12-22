@@ -210,6 +210,8 @@ class PPOAgent(object):
         self.sync_old_pi_params_op = tf.group([tf.assign(old_params, params)\
                                                 for old_params, params in zip(self.old_pi_params, self.pi_params)])
 
+        self.kl = tf.reduce_mean(self.old_dist.kl_divergence(self.dist))
+
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
         self.sync_old_pi_params()
@@ -234,13 +236,18 @@ class PPOAgent(object):
         return act[0], v[0]
     
     def update_pi_params(self, feed_dict):
-        self.sess.run(self.train_pi, feed_dict=feed_dict)
+        _, pi_loss = self.sess.run([self.train_pi, self.pi_loss], feed_dict=feed_dict)
+        return pi_loss
 
     def update_v_params(self, feed_dict):
-        self.sess.run(self.train_v, feed_dict=feed_dict)
+        _, v_loss = self.sess.run([self.train_v, self.v_loss], feed_dict=feed_dict)
+        return v_loss
 
     def sync_old_pi_params(self):
         self.sess.run(self.sync_old_pi_params_op)
+
+    def get_kl(self, feed_dict):
+        return self.sess.run(self.kl, feed_dict)
 
 
 class PPORunner(object):
@@ -252,7 +259,8 @@ class PPORunner(object):
                  train_epoch_len=5000,
                  gamma=0.99,
                  lam=0.95,
-                 train_pi_iters=5,
+                 dtarg=0.01,
+                 train_pi_iters=80,
                  train_v_iters=80,
                  logger_kwargs=dict()):
         """Initialize the Runner object.
@@ -276,11 +284,13 @@ class PPORunner(object):
         tf.logging.info(f'\t epochs: {epochs}')
         tf.logging.info(f'\t gamma: {gamma}')
         tf.logging.info(f'\t lam: {lam}')
+        tf.logging.info(f'\t dtarg: {dtarg}')
         tf.logging.info(f'\t train_epoch_len: {train_epoch_len}')
         tf.logging.info(f'\t train_v_iters: {train_v_iters}')
         tf.logging.info(f'\t train_pi_iters: {train_pi_iters}')
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
+        self.dtarg = dtarg
         self.train_pi_iters = train_pi_iters
         self.train_v_iters = train_v_iters
         self.logger_kwargs = logger_kwargs
@@ -303,6 +313,7 @@ class PPORunner(object):
         traj_r, traj_len = 0, 0
         for step in range(epoch_len):
             act, v = self.agent.select_action(obs[None, ])
+            logger.store(VVals=v)
             next_obs, rew, done, info = self.env.step(act)
             self.buffer.store(obs, act, rew, v)
             
@@ -321,7 +332,6 @@ class PPORunner(object):
                 logger.store(EpRet=traj_r, EpLen=traj_len)
                 traj_r, traj_len = 0, 0 
                 
-
     def _run_train_phase(self, epoch_len, logger):
         self._collect_trajectories(epoch_len, logger)
 
@@ -334,9 +344,16 @@ class PPORunner(object):
         }
 
         for i in range(self.train_pi_iters):
-            self.agent.update_pi_params(feed_dict)
+            kl = self.agent.get_kl(feed_dict)
+            logger.store(KL=kl)
+            if kl > 1.5 * self.dtarg:
+                logger.log(f'Early stopping at step {i} due to reaching max kl.')
+                break
+            pi_loss = self.agent.update_pi_params(feed_dict)
+            logger.store(PiLoss=pi_loss)
         for i in range(self.train_v_iters):
-            self.agent.update_v_params(feed_dict)
+            v_loss = self.agent.update_v_params(feed_dict)
+            logger.store(VLoss=v_loss)
         self.agent.sync_old_pi_params()
 
     def run_experiments(self):
@@ -347,6 +364,10 @@ class PPORunner(object):
             logger.log_tabular('Epoch', epoch+1)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('VVals', average_only=True)
+            logger.log_tabular('VLoss', average_only=True)
+            logger.log_tabular('KL', average_only=True)
+            logger.log_tabular('PiLoss', average_only=True)
             logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()

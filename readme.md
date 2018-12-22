@@ -35,13 +35,13 @@ I use [gin-config](https://github.com/google/gin-config), a very simple but powe
 ## Running Tests
 ### Training a model
 ```
-cd spinningup/spinup/algos/ddpg
-python -m ddpg --env Pendulum-v0 --seed 0
+cd spinningup
+python -m spinup.algos.ppo.ppo --env Pendulum-v0 --seed 0
 ```
 ### Plotting the performance(average epoch return)
 ```
 cd spinningup
-python -m spinup.plot data/ddpg/Pendulum-v0/seed0
+python -m spinup.plot data/ppo/Pendulum-v0/seed0
 ```
 See the page on [plotting results](http://spinningup.openai.com/en/latest/utils/plotter.html) for documentation of the plotter.
 ## References

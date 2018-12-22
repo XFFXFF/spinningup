@@ -13,6 +13,7 @@ My design principle:
 ## Algorithms
 * [VPG](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/vpg)
 * [TRPO](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/trpo)
+* [PPO](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/ppo)
 * [DDPG](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/ddpg)
 
 
@@ -30,7 +31,6 @@ git clone https://github.com/XFFXFF/spinningup.git
 cd spinningup
 pip install -e .
 ```
-I use [gin-config](https://github.com/google/gin-config), a very simple but powerful tool, to manage parameters. I highly recommend that you take a look at it.
 
 ## Running Tests
 ### Training a model
@@ -54,6 +54,9 @@ See the page on [plotting results](http://spinningup.openai.com/en/latest/utils/
 [Advanced policy gradients (natural gradient, importance sampling)](http://rail.eecs.berkeley.edu/deeprlcourse-fa17/f17docs/lecture_13_advanced_pg.pdf), Joshua Achiam. 2017.  
 [Trust Region Policy Optimization](http://spinningup.openai.com/en/latest/algorithms/trpo.html), OpenAI/Spiningup.  
 
+### PPO 
+[Proximal Policy Optimization](http://spinningup.openai.com/en/latest/algorithms/ppo.html), OpenAI/Spiningup.  
+[Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347), Schulman et al. 2017.  
 ### DDPG
 [Deep Deterministic Policy Gradient](http://spinningup.openai.com/en/latest/algorithms/ddpg.html), OpenAI/Spinningup.   
 [Deterministic Policy Gradient Algorithms](http://proceedings.mlr.press/v32/silver14.pdf), Silver et al. 2014.  

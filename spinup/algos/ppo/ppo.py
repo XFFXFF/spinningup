@@ -211,6 +211,7 @@ class PPOAgent(object):
                                                 for old_params, params in zip(self.old_pi_params, self.pi_params)])
 
         self.kl = tf.reduce_mean(self.old_dist.kl_divergence(self.dist))
+        self.entropy = tf.reduce_mean(self.dist.entropy())
 
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
@@ -247,7 +248,7 @@ class PPOAgent(object):
         self.sess.run(self.sync_old_pi_params_op)
 
     def get_kl(self, feed_dict):
-        return self.sess.run(self.kl, feed_dict)
+        return self.sess.run([self.kl, self.entropy], feed_dict)
 
 
 class PPORunner(object):
@@ -344,8 +345,8 @@ class PPORunner(object):
         }
 
         for i in range(self.train_pi_iters):
-            kl = self.agent.get_kl(feed_dict)
-            logger.store(KL=kl)
+            kl, entropy = self.agent.get_kl(feed_dict)
+            logger.store(KL=kl, Entropy=entropy)
             if kl > 1.5 * self.dtarg:
                 logger.log(f'Early stopping at step {i} due to reaching max kl.')
                 break
@@ -367,6 +368,7 @@ class PPORunner(object):
             logger.log_tabular('VVals', average_only=True)
             logger.log_tabular('VLoss', average_only=True)
             logger.log_tabular('KL', average_only=True)
+            logger.log_tabular('Entropy', average_only=True)
             logger.log_tabular('PiLoss', average_only=True)
             logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)

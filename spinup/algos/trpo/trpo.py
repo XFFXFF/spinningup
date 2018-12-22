@@ -321,7 +321,7 @@ class TRPORunner(object):
                 hyperparameter doesn't often matter.
             backtrack_coeff: float, How far back to step during backtracking line
                 search. (Always between 0 and 1, usually above 0.5.)
-            train_v_iters: train_v_iters (int): Number of gradient descent steps to take on 
+            train_v_iters: int, Number of gradient descent steps to take on 
                 value function per epoch.
             logger_kwargs: int, Keyword args for Epochlogger.
         """
@@ -336,7 +336,7 @@ class TRPORunner(object):
         tf.logging.info(f'\t delta: {delta}')
         tf.logging.info(f'\t backtrack_iters: {backtrack_iters}')
         tf.logging.info(f'\t backtrack_coeff: {backtrack_coeff}')
-        tf.logging.info(f'\t train_v_iterss: {train_v_iters}')
+        tf.logging.info(f'\t train_v_iters: {train_v_iters}')
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
         self.gamma = gamma

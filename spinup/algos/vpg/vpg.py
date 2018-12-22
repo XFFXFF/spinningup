@@ -4,20 +4,13 @@ import time
 import gym
 import numpy as np
 import tensorflow as tf
-import gin.tf
 from gym.spaces import Box, Discrete
 from tensorflow.distributions import Categorical, Normal
 
 from spinup.utils.checkpointer import get_latest_check_num
 from spinup.utils.logx import EpochLogger
-from spinup.utils.mpi_tf import MpiAdamOptimizer, sync_all_params
 
 
-def load_gin_configs(gin_file, gin_bindings=None):
-    gin.parse_config_files_and_bindings(gin_file, bindings=gin_bindings, skip_unknown=False)
-
-
-@gin.configurable
 class VPGNet(object):
 
     def __init__(self,
@@ -77,7 +70,6 @@ class VPGNet(object):
         return self.dist, self.v
 
 
-@gin.configurable
 class VPGAgent(object):
 
     def __init__(self,
@@ -113,8 +105,8 @@ class VPGAgent(object):
         self.pi_loss = -tf.reduce_mean(self.log_probs * self.adv_ph)
         self.v_loss = tf.reduce_mean((self.ret_ph - self.v)**2)
 
-        pi_optimizer = MpiAdamOptimizer(learning_rate=pi_lr)
-        v_optimizer = MpiAdamOptimizer(learning_rate=v_lr)
+        pi_optimizer = tf.train.AdamOptimizer(learning_rate=pi_lr)
+        v_optimizer = tf.train.AdamOptimizer(learning_rate=v_lr)
 
         self.train_pi_op = pi_optimizer.minimize(self.pi_loss)
         self.train_v_op = v_optimizer.minimize(self.v_loss)
@@ -123,7 +115,6 @@ class VPGAgent(object):
 
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
-        self.sess.run(sync_all_params())
 
         self.saver = tf.train.Saver(max_to_keep=3)
 
@@ -160,13 +151,12 @@ class VPGAgent(object):
         self.saver.restore(self.sess, osp.join(checkpoints_dir, f'tf_ckpt-{latest_model}'))
 
 
-@gin.configurable
 class VPGRunner(object):
 
     def __init__(self,
                  env_name, 
                  seed, 
-                 epochs,
+                 epochs=200,
                  gamma=0.99,
                  lam=0.95,
                  max_traj_len=None,
@@ -363,14 +353,11 @@ if __name__ == '__main__':
     parser.add_argument('--env', type=str, default='Pendulum-v0')
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--exp_name', type=str, default='vpg')
-    parser.add_argument('--gin_files', nargs='+', default=["vpg.gin"])
     parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
 
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)
-
-    load_gin_configs(args.gin_files)
 
     tf.logging.set_verbosity(tf.logging.INFO)
     

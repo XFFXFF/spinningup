@@ -6,18 +6,12 @@ import numpy as np
 import tensorflow as tf
 from gym.spaces import Box, Discrete
 from tensorflow.distributions import Categorical, Normal
-import gin.tf
 
 from spinup.utils.logx import EpochLogger
 
 EPS = 1E-8
 
 
-def load_gin_configs(gin_files, gin_bindings=None):
-    gin.parse_config_files_and_bindings(gin_files, bindings=gin_bindings, skip_unknown=False)
-
-
-@gin.configurable
 class TRPOBuffer:
     """
     A buffer for storing trajectories experienced by a TRPO agent interacting
@@ -103,7 +97,6 @@ class TRPOBuffer:
         return self.obs_buf, self.act_buf, self.adv_buf, self.ret_buf
 
 
-@gin.configurable
 class TRPONet(object):
 
     def __init__(self,
@@ -168,7 +161,6 @@ class TRPONet(object):
         return self.dist, self.old_dist, self.v
 
 
-@gin.configurable   
 class TRPOAgent(object):
 
     def __init__(self,
@@ -281,7 +273,6 @@ class TRPOAgent(object):
         self.sess.run(self.sync_old_params_op)
 
 
-@gin.configurable
 class TRPORunner(object):
 
     def __init__(self,
@@ -470,15 +461,12 @@ if __name__ == '__main__':
     parser.add_argument('--env', type=str, default='Pendulum-v0')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--exp_name', type=str, default='trpo')
-    parser.add_argument('--gin_files', nargs='+', default=["trpo.gin"])
     args = parser.parse_args()
 
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)
 
     tf.logging.set_verbosity(tf.logging.INFO)
-
-    load_gin_configs(args.gin_files)
 
     Runner = TRPORunner(args.env, args.seed, logger_kwargs=logger_kwargs)
     Runner.run_experiment()

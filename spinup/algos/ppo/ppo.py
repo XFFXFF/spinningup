@@ -1,10 +1,11 @@
 
+import time
 import gym
 import numpy as np
 import tensorflow as tf
 
 from gym.spaces import Discrete, Box
-from tensorflow.distributions import Categorical
+from tensorflow.distributions import Categorical, Normal
 
 from spinup.utils.logx import EpochLogger
 
@@ -97,30 +98,63 @@ class PPOBuffer:
 class PPONet(object):
 
     def __init__(self,
-                 obs_dim,
+                 obs,
                  act_space,
-                 obs_ph,
                  hidden_sizes=(64, 64),
                  activation=tf.nn.relu,
                  output_activation=None):
+        """Initialize the Network.
+
+        Args:
+            obs: tf placeholer, the observation we get from environment.
+            act_space: gym.spaces.
+            hidden_sizes: tuple, the dimensions of the hidden layers.
+            activation: tf activation function before the output layer.
+            output_activation: tf activation function of the output layer.
+        """
+        tf.logging.info(f'\t hidden_sizes: {hidden_sizes}')
+        tf.logging.info(f'\t activation: {activation}')
+        tf.logging.info(f'\t output_activation: {output_activation}')
         with tf.variable_scope('v'):
-            self.v = tf.squeeze(self._mlp(obs_ph, list(hidden_sizes)+[1], activation, output_activation), axis=1)
+            self.v = tf.squeeze(self._mlp(obs, list(hidden_sizes)+[1], activation, output_activation), axis=1)
         with tf.variable_scope('pi'):
             if isinstance(act_space, Discrete):
-                logits = self._mlp(obs_ph, list(hidden_sizes)+[act_space.n], activation, None)
+                logits = self._mlp(obs, list(hidden_sizes)+[act_space.n], activation, None)
                 self.dist = self._categorical_policy(logits)
+            if isinstance(act_space, Box):
+                mu = self._mlp(obs, list(hidden_sizes)+[act_space.shape[0]], activation, None)
+                self.dist = self._gaussian_policy(mu, act_space.shape[0])
         with tf.variable_scope('old_pi'):
             if isinstance(act_space, Discrete):
-                logits = self._mlp(obs_ph, list(hidden_sizes)+[act_space.n], activation, None)
+                logits = self._mlp(obs, list(hidden_sizes)+[act_space.n], activation, None)
                 self.old_dist = self._categorical_policy(logits)
+            if isinstance(act_space, Box):
+                mu = self._mlp(obs, list(hidden_sizes)+[act_space.shape[0]], activation, None)
+                self.old_dist = self._gaussian_policy(mu, act_space.shape[0])
     
     def _mlp(self, x, hidden_sizes, activation, output_activation):
-        for h in hidden_sizes[::-1]:
+        for h in hidden_sizes[:-1]:
             x = tf.layers.dense(x, h, activation)
         return tf.layers.dense(x, hidden_sizes[-1], output_activation)
 
     def _categorical_policy(self, logits):
+        """Categorical policy for discrete actions
+        
+        Returns: 
+            dist: Categorical distribution.
+        """
         dist = Categorical(logits=logits)
+        return dist
+
+    def _gaussian_policy(self, mu, act_dim):
+        """Gaussian policy for continuous actions.
+
+        Returns:
+            dist: Gaussian distribution.
+        """
+        log_std = tf.get_variable(name='log_std', initializer=0.5*np.ones(act_dim, dtype=np.float32))
+        std = tf.exp(log_std)
+        dist = Normal(loc=mu, scale=std)
         return dist
 
     def network_out(self):
@@ -135,6 +169,20 @@ class PPOAgent(object):
                  clip_ratio=0.2,
                  pi_lr=0.001,
                  v_lr=0.001):
+        """Initialize the Agent.
+
+        Args:
+            obs_dim: int, The dimensions of observation vector.
+            act_space: gym.spaces.
+            clip_ratio: float, Hyperparameter for clipping in the policy objective.
+            pi_lr: float, Learning rate for Pi-networks.
+            v_lr: float, Learning rate for V-networks.
+        """
+        tf.logging.info(f'\t obs_dim: {obs_dim}')
+        tf.logging.info(f'\t act_space: {act_space}')
+        tf.logging.info(f'\t clip_ratio: {clip_ratio}')
+        tf.logging.info(f'\t pi_lr: {pi_lr}')
+        tf.logging.info(f'\t v_lr: {v_lr}')
         self.obs_dim = obs_dim
         self.act_space = act_space
 
@@ -143,8 +191,12 @@ class PPOAgent(object):
 
         self.act = self.dist.sample()
 
-        self.pi = self.dist.prob(self.act_ph)
-        self.old_pi = tf.stop_gradient(self.old_dist.prob(self.act_ph))
+        if isinstance(self.act_space, Discrete):
+            self.pi = self.dist.prob(self.act_ph)
+            self.old_pi = tf.stop_gradient(self.old_dist.prob(self.act_ph))
+        if isinstance(self.act_space, Box):
+            self.pi = tf.reduce_sum(self.dist.prob(self.act_ph), axis=1)
+            self.old_pi = tf.stop_gradient(tf.reduce_sum(self.old_dist.prob(self.act_ph), axis=1))
         ratio = self.pi / self.old_pi
         min_adv = tf.where(self.adv_ph > 0, (1 + clip_ratio) * self.adv_ph, (1 - clip_ratio) * self.adv_ph)
         self.pi_loss = -tf.reduce_mean(tf.minimum(ratio * self.adv_ph, min_adv))
@@ -166,12 +218,14 @@ class PPOAgent(object):
         obs_ph = tf.placeholder(tf.float32, shape=(None, self.obs_dim))
         if isinstance(self.act_space, Discrete):
             act_ph = tf.placeholder(tf.int32, shape=(None, ))
+        if isinstance(self.act_space, Box):
+            act_ph = tf.placeholder(tf.float32, shape=(None, self.act_space.shape[0]))
         adv_ph = tf.placeholder(tf.float32, shape=(None, ))
         ret_ph = tf.placeholder(tf.float32, shape=(None, ))
         return obs_ph, act_ph, adv_ph, ret_ph
 
     def _create_network(self):
-        ppo_net = PPONet(self.obs_dim, self.act_space, self.obs_ph)
+        ppo_net = PPONet(self.obs_ph, self.act_space)
         v, dist, old_dist = ppo_net.network_out()
         return v, dist, old_dist
 
@@ -196,12 +250,35 @@ class PPORunner(object):
                  seed,
                  epochs=50,
                  train_epoch_len=5000,
-                 buf_size=5000,
                  gamma=0.99,
                  lam=0.95,
                  train_pi_iters=5,
                  train_v_iters=80,
                  logger_kwargs=dict()):
+        """Initialize the Runner object.
+
+        Args:
+            env: str, Name of the environment.
+            seed: int, Seed for random number generators.
+            epochs: int, Number of epochs to run and train agent.
+            train_epoch_len: int, Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each training epoch.
+            gamma: float, Discount factor, (Always between 0 and 1.)
+            lam: float, Lambda for GAE-Lambda. (Always between 0 and 1, close to 1.)
+            train_v_iters: int, Number of gradient descent steps to take on 
+                value function per epoch.
+            train_pi_iters: int, Number of gradient descent steps to take on
+                policy objective per epoch.
+            logger_kwargs: int, Keyword args for Epochlogger.
+        """
+        tf.logging.info(f'\t env: {env}')
+        tf.logging.info(f'\t seed: {seed}')
+        tf.logging.info(f'\t epochs: {epochs}')
+        tf.logging.info(f'\t gamma: {gamma}')
+        tf.logging.info(f'\t lam: {lam}')
+        tf.logging.info(f'\t train_epoch_len: {train_epoch_len}')
+        tf.logging.info(f'\t train_v_iters: {train_v_iters}')
+        tf.logging.info(f'\t train_pi_iters: {train_pi_iters}')
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
         self.train_pi_iters = train_pi_iters
@@ -219,7 +296,7 @@ class PPORunner(object):
         obs_dim = self.env.observation_space.shape[0]
         act_space = self.env.action_space
         self.agent = PPOAgent(obs_dim, act_space)
-        self.buffer = PPOBuffer(obs_dim, act_space, buf_size, gamma, lam)
+        self.buffer = PPOBuffer(obs_dim, act_space, train_epoch_len, gamma, lam)
 
     def _collect_trajectories(self, epoch_len, logger):
         obs = self.env.reset()
@@ -264,24 +341,29 @@ class PPORunner(object):
 
     def run_experiments(self):
         logger = EpochLogger(**self.logger_kwargs)
+        start_time = time.time()
         for epoch in range(self.epochs):
             self._run_train_phase(self.train_epoch_len, logger)
             logger.log_tabular('Epoch', epoch+1)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
+            logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
 
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='CartPole-v0')
+    parser.add_argument('--env', type=str, default='Pendulum-v0')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--exp_name', type=str, default='ppo')
     args = parser.parse_args()
 
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.env, args.seed)
+
+    tf.logging.set_verbosity(tf.logging.INFO)
 
     runner = PPORunner(args.env, args.seed, logger_kwargs=logger_kwargs)
     runner.run_experiments()

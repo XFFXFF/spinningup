@@ -372,27 +372,28 @@ class TRPORunner(object):
             
     def _colloct_trajectories(self, epoch_len, max_traj, logger):
         """Collect set of trajectories by running the policy pi"""
-        step = 0
-        while step < epoch_len:
-            traj_len, traj_r, done = 0, 0, False
-            obs = self.env.reset()
-            while(traj_len < max_traj and step < epoch_len and not done):
-                act, v = self.agent.select_action(obs[None, :])
-                next_obs, rew, done, _ = self.env.step(act)
-                self.buffer.store(obs, act, rew, v)
+        obs = self.env.reset()
+        traj_r, traj_len = 0, 0
+        for step in range(epoch_len):
+            act, v = self.agent.select_action(obs[None, ])
+            logger.store(VVals=v)
+            next_obs, rew, done, info = self.env.step(act)
+            self.buffer.store(obs, act, rew, v)
+            
+            traj_r += rew
+            traj_len += 1
 
-                step += 1
-                traj_len += 1
-                traj_r += rew
-                obs = next_obs
+            obs = next_obs
 
             if done:
-                last_v = 0
-            else:
-                _, last_v = self.agent.select_action(next_obs[None, :])
-            self.buffer.finish_path(last_v)
-                
-            logger.store(EpRet=traj_r, EpLen=traj_len)
+                if traj_len == self.max_traj:
+                    _, last_v = self.agent.select_action(obs[None, :])
+                else:
+                    last_v = 0
+                self.buffer.finish_path(last_v)
+                obs = self.env.reset()
+                logger.store(EpRet=traj_r, EpLen=traj_len)
+                traj_r, traj_len = 0, 0 
 
     def _run_train_phase(self, epoch_len, logger):
         """Run train phase.
@@ -446,6 +447,7 @@ class TRPORunner(object):
             logger.log_tabular('Epoch', epoch + 1)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('VVals', average_only=True)
             logger.log_tabular('PiLoss', average_only=True)
             logger.log_tabular('VLoss', average_only=True)
             logger.log_tabular('KL', average_only=True)

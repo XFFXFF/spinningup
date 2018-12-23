@@ -9,7 +9,7 @@ from spinup.utils.logx import EpochLogger
 from spinup.utils.checkpointer import get_latest_check_num
 
 
-class ReplayBuffer:
+class DDPGBuffer:
     """
     A simple FIFO experience replay buffer for agents.
     """
@@ -36,7 +36,7 @@ class ReplayBuffer:
         return self.obs1_buf[idxs], self.acts_buf[idxs], self.rews_buf[idxs], self.obs2_buf[idxs], self.done_buf[idxs]
 
 
-class ActorCritic(object):
+class DDPGNet(object):
 
     def __init__(self, 
                  obs, 
@@ -159,10 +159,10 @@ class DDPGAgent(object):
 
     def _create_network(self):
         with tf.variable_scope('main'):
-            main_net = ActorCritic(self.obs_ph, self.act_ph, self.act_dim, self.act_space_high, scope='main')
+            main_net = DDPGNet(self.obs_ph, self.act_ph, self.act_dim, self.act_space_high, scope='main')
             self.pi, self.q, self.q_pi = main_net.network_out()
         with tf.variable_scope('target'):
-            target_net = ActorCritic(self.next_obs_ph, self.act_ph, self.act_dim, self.act_space_high, scope='target')
+            target_net = DDPGNet(self.next_obs_ph, self.act_ph, self.act_dim, self.act_space_high, scope='target')
             self.pi_target, _, self.q_pi_target = target_net.network_out()
     
     def select_act(self, obs, noise_scale=0):
@@ -252,7 +252,7 @@ class DDPGRunner(object):
         act_space_high = self.env.action_space.high
 
         self.agent = DDPGAgent(obs_dim, act_dim, act_space_high)
-        self.replay_buffer = ReplayBuffer(obs_dim, act_dim, buffer_size)
+        self.replay_buffer = DDPGBuffer(obs_dim, act_dim, buffer_size)
 
     def run_train_phase(self, epoch_len, logger):
         """Run train phase.

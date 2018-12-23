@@ -4,14 +4,10 @@ import time
 import gym
 import numpy as np
 import tensorflow as tf
-import gin.tf
 
 from spinup.utils.logx import EpochLogger
 from spinup.utils.checkpointer import get_latest_check_num
 
-
-def load_gin_configs(gin_file, gin_bindings):
-    gin.parse_config_files_and_bindings(gin_file, bindings=gin_bindings, skip_unknown=False)
 
 class ReplayBuffer:
     """
@@ -40,14 +36,13 @@ class ReplayBuffer:
         return self.obs1_buf[idxs], self.acts_buf[idxs], self.rews_buf[idxs], self.obs2_buf[idxs], self.done_buf[idxs]
 
 
-@gin.configurable
 class ActorCritic(object):
 
     def __init__(self, 
-                 observation, 
-                 action, 
-                 action_dim, 
-                 action_space_high,
+                 obs, 
+                 act, 
+                 act_dim, 
+                 act_space_high,
                  hidden_sizes=(300,),
                  activation=tf.nn.relu,
                  output_activation=tf.nn.tanh, 
@@ -55,8 +50,8 @@ class ActorCritic(object):
         """Initialize the Network.
 
         Args:
-            observation: tf placeholer, the observation we get from environment.
-            action: tf placeholder, the action we get from agent.
+            obs: tf placeholer, the observation we get from environment.
+            act: tf placeholder, the action we get from agent.
             aciton_space_high: float, the maximum value action can take.
             hidden_sizes: tuple, the dimensions of the hidden layers.
             activation: tf activation function before the output layer.
@@ -71,11 +66,11 @@ class ActorCritic(object):
         tf.logging.info('\t output_activation: %s', output_activation)
         value_function_mlp = lambda x: tf.squeeze(self.mlp(x, list(hidden_sizes)+[1], activation, None), 1)
         with tf.variable_scope('pi'):
-            self.pi = action_space_high * self.mlp(observation, list(hidden_sizes)+[action_dim], activation, output_activation)
+            self.pi = act_space_high * self.mlp(obs, list(hidden_sizes)+[act_dim], activation, output_activation)
         with tf.variable_scope('q'):
-            self.q = value_function_mlp(tf.concat([observation, action], axis=1))
+            self.q = value_function_mlp(tf.concat([obs, act], axis=1))
         with tf.variable_scope('q', reuse=True):
-            self.q_pi  = value_function_mlp(tf.concat([observation, self.pi], axis=1))
+            self.q_pi  = value_function_mlp(tf.concat([obs, self.pi], axis=1))
     
     def mlp(self, x, hidden_sizes, activation, output_activation=None):
         for h in hidden_sizes[:-1]:
@@ -86,14 +81,13 @@ class ActorCritic(object):
         return self.pi, self.q, self.q_pi
 
 
-@gin.configurable
 class DDPGAgent(object):
     """An implementation of DDPG Agent."""
 
     def __init__(self, 
-                 observation_dim,
-                 action_dim,
-                 action_space_high,
+                 obs_dim,
+                 act_dim,
+                 act_space_high,
                  gamma=0.99,
                  polyak=0.995,
                  q_lr=0.001,
@@ -102,9 +96,9 @@ class DDPGAgent(object):
         """Initialize the Agent.
 
         Args:
-            observation_dim: int, The dimensions of observation vector.
-            action_dim: int, The dimensions of action vector.
-            action_space_high: float, The maximum value action can take.
+            obs_dim: int, The dimensions of obs vector.
+            act_dim: int, The dimensions of act vector.
+            act_space_high: float, The maximum value act can take.
             gamma: float,  Discount factor. (Always between 0 and 1.)
             polyak: float, Interpolation factor in polyak averaging for target 
                 networks.
@@ -112,15 +106,15 @@ class DDPGAgent(object):
             pi_lr: float, Learning rate for policy.
         """
 
-        tf.logging.info('\t observation_dim: %d', observation_dim)
-        tf.logging.info('\t action_dim: %d', action_dim)
+        tf.logging.info('\t obs_dim: %d', obs_dim)
+        tf.logging.info('\t act_dim: %d', act_dim)
         tf.logging.info('\t gamma: %f', gamma)
         tf.logging.info('\t polyak: %f', polyak)
         tf.logging.info('\t q_lr: %f', q_lr)
         tf.logging.info('\t pi_lr: %f', pi_lr)
-        self.observation_dim = observation_dim
-        self.action_dim = action_dim
-        self.action_space_high = action_space_high
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.act_space_high = act_space_high
         self.gamma = gamma
         self.polyak = polyak
         self.q_lr = q_lr
@@ -157,24 +151,24 @@ class DDPGAgent(object):
         return [x for x in tf.global_variables() if scope in x.name]    
 
     def _create_placeholder(self):
-        self.observation_ph = tf.placeholder(tf.float32, shape=(None, self.observation_dim))
-        self.action_ph = tf.placeholder(tf.float32, shape=(None, self.action_dim))
+        self.obs_ph = tf.placeholder(tf.float32, shape=(None, self.obs_dim))
+        self.act_ph = tf.placeholder(tf.float32, shape=(None, self.act_dim))
         self.reward_ph = tf.placeholder(tf.float32, shape=(None,))
-        self.next_observation_ph = tf.placeholder(tf.float32, shape=(None, self.observation_dim))
+        self.next_obs_ph = tf.placeholder(tf.float32, shape=(None, self.obs_dim))
         self.done_ph = tf.placeholder(tf.float32, shape=(None,))
 
     def _create_network(self):
         with tf.variable_scope('main'):
-            main_net = ActorCritic(self.observation_ph, self.action_ph, self.action_dim, self.action_space_high, scope='main')
+            main_net = ActorCritic(self.obs_ph, self.act_ph, self.act_dim, self.act_space_high, scope='main')
             self.pi, self.q, self.q_pi = main_net.network_out()
         with tf.variable_scope('target'):
-            target_net = ActorCritic(self.next_observation_ph, self.action_ph, self.action_dim, self.action_space_high, scope='target')
+            target_net = ActorCritic(self.next_obs_ph, self.act_ph, self.act_dim, self.act_space_high, scope='target')
             self.pi_target, _, self.q_pi_target = target_net.network_out()
     
-    def select_action(self, observation, noise_scale=0):
-        action = self.sess.run(self.pi, feed_dict={self.observation_ph: observation})
-        action += noise_scale * np.random.randn(self.action_dim)
-        return np.clip(action, -self.action_space_high, self.action_space_high)
+    def select_act(self, obs, noise_scale=0):
+        act = self.sess.run(self.pi, feed_dict={self.obs_ph: obs})
+        act += noise_scale * np.random.randn(self.act_dim)
+        return np.clip(act, -self.act_space_high, self.act_space_high)
 
     def update_q_function(self, feed_dict):
         return self.sess.run([self.train_q_op, self.q, self.q_loss], feed_dict=feed_dict)
@@ -193,13 +187,12 @@ class DDPGAgent(object):
         self.saver.restore(self.sess, osp.join(checkpoints_dir, f'tf_ckpt-{latest_epoch}'))
 
 
-@gin.configurable
 class DDPGRunner(object):
 
     def __init__(self, 
                  env_name,
                  seed=0,
-                 action_noise=0.1,
+                 act_noise=0.1,
                  epochs=100,
                  train_epoch_len=5000,
                  eval_epoch_len=2000,
@@ -213,14 +206,14 @@ class DDPGRunner(object):
         Args:
             env_name: str, Name of the environment.
             seed: int, Seed for random number generators.
-            action_noise: float, Standard deviation for Gaussian exploration noise added 
+            act_noise: float, Standard deviation for Gaussian exploration noise added 
                 to policy at trainning time.(At test time, no noise is added.)
             epochs: int, Number of epochs to run and train agent.
-            train_epoch_len: int, Number of steps of interaction (state-action pairs)
+            train_epoch_len: int, Number of steps of interact (state-act pairs)
                 for the agent and the environment in each training epoch.
-            test_epoch_len: int, Number of steps of interaction (state-action pairs)
+            test_epoch_len: int, Number of steps of interact (state-act pairs)
                 for the agent and the environment in each testing epoch.
-            stop_random: int, Number of steps for uniform-random action selection,
+            stop_random: int, Number of steps for uniform-random act selection,
                 before running real policy. Helps exploration.
             buffer_size: int, Maximum length of replay buffer.
             batch_size: int, Minibatch size for SGD.
@@ -229,7 +222,7 @@ class DDPGRunner(object):
 
         tf.logging.info('\t env_name: %s', env_name)
         tf.logging.info('\t seed: %d', seed)
-        tf.logging.info('\t action_noise: %f', action_noise)
+        tf.logging.info('\t act_noise: %f', act_noise)
         tf.logging.info('\t epochs: %d', epochs)
         tf.logging.info('\t train_epoch_len: %d', train_epoch_len)
         tf.logging.info('\t eval_epoch_len: %d', eval_epoch_len)
@@ -237,7 +230,7 @@ class DDPGRunner(object):
         tf.logging.info('\t buffer_size: %d', buffer_size)
         tf.logging.info('\t batch_size: %d', batch_size)
         self.env_name = env_name
-        self.action_noise = action_noise
+        self.act_noise = act_noise
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
         self.eval_epoch_len = eval_epoch_len
@@ -254,31 +247,31 @@ class DDPGRunner(object):
         np.random.seed(seed)
         self.env.seed(seed)
 
-        observation_dim = self.env.observation_space.shape[0]
-        action_dim = self.env.action_space.shape[0]
-        action_space_high = self.env.action_space.high
+        obs_dim = self.env.observation_space.shape[0]
+        act_dim = self.env.action_space.shape[0]
+        act_space_high = self.env.action_space.high
 
-        self.agent = DDPGAgent(observation_dim, action_dim, action_space_high)
-        self.replay_buffer = ReplayBuffer(observation_dim, action_dim, buffer_size)
+        self.agent = DDPGAgent(obs_dim, act_dim, act_space_high)
+        self.replay_buffer = ReplayBuffer(obs_dim, act_dim, buffer_size)
 
     def run_train_phase(self, epoch_len, logger):
         """Run train phase.
 
         Args:
-            epoch_len: int, Number of steps of interaction (state-action pairs)
+            epoch_len: int, Number of steps of interact (state-act pairs)
                 for the agent and the environment in each training epoch.
             logger: object, Object to store the information.
         """
 
         ep_r, ep_len = 0, 0
-        observation = self.env.reset()
+        obs = self.env.reset()
         for step in range(epoch_len):
             if self.stop_random:
-                action = self.env.action_space.sample()
+                act = self.env.action_space.sample()
                 self.stop_random -= 1
             else:
-                action = self.agent.select_action(observation[None, :], self.action_noise)[0]
-            next_observation, reward, done, info = self.env.step(action)
+                act = self.agent.select_act(obs[None, :], self.act_noise)[0]
+            next_obs, reward, done, info = self.env.step(act)
             
             ep_r += reward
             ep_len += 1
@@ -287,18 +280,18 @@ class DDPGRunner(object):
             #I find this step has a big impact on the performance
             done = False if ep_len == self.max_ep_len else done
 
-            self.replay_buffer.store(observation, action, reward, next_observation, done)
-            observation = next_observation
+            self.replay_buffer.store(obs, act, reward, next_obs, done)
+            obs = next_obs
 
             if step > self.batch_size:
                 if done or ep_len == self.max_ep_len:
                     for _ in range(ep_len):
-                        observations, actions, rewards, next_observations, dones =\
+                        obss, acts, rewards, next_obss, dones =\
                                                         self.replay_buffer.sample_batch(self.batch_size)
-                        feed_dict = {self.agent.observation_ph: observations,
-                                     self.agent.action_ph: actions,
+                        feed_dict = {self.agent.obs_ph: obss,
+                                     self.agent.act_ph: acts,
                                      self.agent.reward_ph: rewards,
-                                     self.agent.next_observation_ph: next_observations,
+                                     self.agent.next_obs_ph: next_obss,
                                      self.agent.done_ph: dones}
 
                         _, q_value, q_loss = self.agent.update_q_function(feed_dict)
@@ -309,7 +302,7 @@ class DDPGRunner(object):
                         logger.store(QLoss=q_loss)
                         logger.store(PiLoss=pi_loss)
                     
-                    observation = self.env.reset()
+                    obs = self.env.reset()
                     logger.store(EpRet=ep_r, EpLen=ep_len)
                     ep_r, ep_len = 0, 0
 
@@ -317,25 +310,25 @@ class DDPGRunner(object):
         """Run test phase.
 
         Args:
-            epoch_len: int, Number of steps of interaction (state-action pairs)
+            epoch_len: int, Number of steps of interact (state-act pairs)
                 for the agent and the environment in each training epoch.
             logger: object, Object to store the information.
         """
 
         ep_r, ep_len = 0, 0
-        observation = self.env.reset()
+        obs = self.env.reset()
         for step in range(epoch_len):
             if render: self.env.render()
-            action = self.agent.select_action(observation[None, :])[0]
-            next_observation, reward, done, info = self.env.step(action)
+            act = self.agent.select_act(obs[None, :])[0]
+            next_obs, reward, done, info = self.env.step(act)
             ep_r += reward
             ep_len += 1
-            observation = next_observation
+            obs = next_obs
             
             if done or ep_len == self.max_ep_len:
                 logger.store(TestEpRet=ep_r, TestEpLen=ep_len)
 
-                observation = self.env.reset()
+                obs = self.env.reset()
                 ep_r, ep_len = 0, 0
         
     def run_experiment(self):
@@ -375,10 +368,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='Pendulum-v0')
     parser.add_argument('--seed', '-s', type=int, default=0)
-    parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--exp_name', type=str, default='ddpg')
-    parser.add_argument('--gin_files', nargs='+', default=["ddpg.gin"])
-    parser.add_argument('--gin_bindings', nargs='+', default=[])
     parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
 
@@ -386,8 +376,7 @@ if __name__ == '__main__':
     logger_kwargs = setup_logger_kwargs(exp_name=args.exp_name, env_name=args.env, seed=args.seed)
 
     tf.logging.set_verbosity(tf.logging.INFO)
-    load_gin_configs(args.gin_files, args.gin_bindings)
-    runner = DDPGRunner(env_name=args.env, epochs=args.epochs, seed=args.seed, logger_kwargs=logger_kwargs)
+    runner = DDPGRunner(env_name=args.env, seed=args.seed, logger_kwargs=logger_kwargs)
     if args.test:
         runner.run_test_and_render()
     else:

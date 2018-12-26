@@ -11,10 +11,11 @@ My design principle:
 - Writting more readable code.
 
 ## Algorithms
-* [VPG](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/vpg)
-* [TRPO](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/trpo)
-* [PPO](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/ppo)
-* [DDPG](https://github.com/XFFXFF/spinningup/tree/master/spinup/algos/ddpg)
+* VPG
+* TRPO
+* PPO
+* DDPG
+* TD3
 
 
 
@@ -36,7 +37,7 @@ pip install -e .
 ### Training a model
 ```
 cd spinningup
-python -m spinup.algos.ppo.ppo --env Pendulum-v0 --seed 0
+python -m spinup.algos.ppo --env Pendulum-v0 --seed 0
 ```
 ### Plotting the performance(average epoch return)
 ```

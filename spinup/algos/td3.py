@@ -199,19 +199,20 @@ class TD3Runner(object):
                 (in accordance with source code of TD3 published by
                 original authors).
                 """
-                for i in range(ep_len):
-                    obs_buf, act_buf, rew_buf, next_obs_buf, done_buf = self.buffer.sample_batch(self.batch_size)
-                    feed_dict = {
-                        self.agent.obs_ph: obs_buf,
-                        self.agent.act_ph: act_buf,
-                        self.agent.rew_ph: rew_buf,
-                        self.agent.next_obs_ph: next_obs_buf,
-                        self.agent.done_ph: done_buf,
-                    }
-                    self.agent.update_q(feed_dict)
-                    if i % self.policy_delay == 0:
-                        self.agent.update_pi(feed_dict)
-                    self.agent.update_target()
+                if not self.random_acts:
+                    for i in range(ep_len):
+                        obs_buf, act_buf, rew_buf, next_obs_buf, done_buf = self.buffer.sample_batch(self.batch_size)
+                        feed_dict = {
+                            self.agent.obs_ph: obs_buf,
+                            self.agent.act_ph: act_buf,
+                            self.agent.rew_ph: rew_buf,
+                            self.agent.next_obs_ph: next_obs_buf,
+                            self.agent.done_ph: done_buf,
+                        }
+                        self.agent.update_q(feed_dict)
+                        if i % self.policy_delay == 0:
+                            self.agent.update_pi(feed_dict)
+                        self.agent.update_target()
                 logger.store(EpRet=ep_r, EpLen=ep_len)
                 obs = self.env.reset()
                 ep_r, ep_len = 0, 0

@@ -144,7 +144,7 @@ class DDPGAgent(object):
         self.sess.run(tf.global_variables_initializer())
         self.sess.run(self.init_target_op)
 
-        self.saver = tf.train.Saver(max_to_keep=3)    
+        self.saver = tf.train.Saver(max_to_keep=3)   
 
     def _get_var(self, scope):
         """Get all the variables of the scope."""

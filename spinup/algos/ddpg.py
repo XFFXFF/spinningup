@@ -15,25 +15,25 @@ class DDPGBuffer:
     """
 
     def __init__(self, obs_dim, act_dim, size):
-        self.obs1_buf = np.zeros([size, obs_dim], dtype=np.float32)
-        self.obs2_buf = np.zeros([size, obs_dim], dtype=np.float32)
-        self.acts_buf = np.zeros([size, act_dim], dtype=np.float32)
-        self.rews_buf = np.zeros(size, dtype=np.float32)
+        self.obs_buf = np.zeros([size, obs_dim], dtype=np.float32)
+        self.next_obs_buf = np.zeros([size, obs_dim], dtype=np.float32)
+        self.act_buf = np.zeros([size, act_dim], dtype=np.float32)
+        self.rew_buf = np.zeros(size, dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
 
     def store(self, obs, act, rew, next_obs, done):
-        self.obs1_buf[self.ptr] = obs
-        self.obs2_buf[self.ptr] = next_obs
-        self.acts_buf[self.ptr] = act
-        self.rews_buf[self.ptr] = rew
+        self.obs_buf[self.ptr] = obs
+        self.next_obs_buf[self.ptr] = next_obs
+        self.act_buf[self.ptr] = act
+        self.rew_buf[self.ptr] = rew
         self.done_buf[self.ptr] = done
         self.ptr = (self.ptr+1) % self.max_size
         self.size = min(self.size+1, self.max_size)
 
     def sample_batch(self, batch_size=32):
         idxs = np.random.randint(0, self.size, size=batch_size)
-        return self.obs1_buf[idxs], self.acts_buf[idxs], self.rews_buf[idxs], self.obs2_buf[idxs], self.done_buf[idxs]
+        return self.obs_buf[idxs], self.act_buf[idxs], self.rew_buf[idxs], self.next_obs_buf[idxs], self.done_buf[idxs]
 
 
 class DDPGNet(object):
@@ -286,13 +286,13 @@ class DDPGRunner(object):
             if step > self.batch_size:
                 if done or ep_len == self.max_ep_len:
                     for _ in range(ep_len):
-                        obss, acts, rewards, next_obss, dones =\
+                        obs_buf, act_buf, rew_buf, next_obs_buf, done_buf =\
                                                         self.replay_buffer.sample_batch(self.batch_size)
-                        feed_dict = {self.agent.obs_ph: obss,
-                                     self.agent.act_ph: acts,
-                                     self.agent.reward_ph: rewards,
-                                     self.agent.next_obs_ph: next_obss,
-                                     self.agent.done_ph: dones}
+                        feed_dict = {self.agent.obs_ph: obs_buf,
+                                     self.agent.act_ph: act_buf,
+                                     self.agent.reward_ph: rew_buf,
+                                     self.agent.next_obs_ph: next_obs_buf,
+                                     self.agent.done_ph: done_buf}
 
                         _, q_value, q_loss = self.agent.update_q_function(feed_dict)
                         _, pi_loss = self.agent.update_policy(feed_dict)
@@ -346,7 +346,7 @@ class DDPGRunner(object):
             logger.log_tabular('EpLen', average_only=True)
             logger.log_tabular('TestEpLen', average_only=True)
             logger.log_tabular('TotalEnvInteracts', (epoch+1)*self.train_epoch_len)
-            logger.log_tabular('QValue', with_min_and_max=True)
+            logger.log_tabular('QValue', average_only=True)
             logger.log_tabular('QLoss', average_only=True)
             logger.log_tabular('PiLoss', average_only=True)
             logger.log_tabular('Time', time.time() - start_time)

@@ -8,6 +8,9 @@ from spinup.utils.logx import EpochLogger
 
 
 class TD3Buffer(object):
+    """
+    A simple FIFO experience replay buffer for TD3 agents.
+    """
 
     def __init__(self, obs_dim, act_dim, size):
         self.obs_buf = np.zeros([size, obs_dim], dtype=np.float32)
@@ -41,6 +44,18 @@ class TD3Net(object):
                  hidden_sizes=(300, ),
                  activation=tf.nn.relu,
                  ):
+        """Initialize the Network.
+
+        Args:
+            obs: tf placeholer, the observation we get from environment.
+            act: tf placeholder, the action we get from agent.
+            act_dim: int, the dimensions of action.
+            aciton_space_high: float, the maximum value action can take.
+            hidden_sizes: tuple, the dimensions of the hidden layers.
+            activation: tf activation function before the output layer.
+        """
+        tf.logging.info(f'\t hidden_sizes: {hidden_sizes}')
+        tf.logging.info(f'\t activation: {activation}')
         val_func_mlp = lambda x: tf.squeeze(self._mlp(x, list(hidden_sizes)+[1], activation, None), axis=1)
         with tf.variable_scope('pi'):
             self.pi = act_space_high * self._mlp(obs, list(hidden_sizes)+[act_dim], activation, tf.nn.tanh)
@@ -61,6 +76,7 @@ class TD3Net(object):
         
 
 class TD3Agent(object):
+    """An implementation of TD3 agent."""
 
     def __init__(self,
                  obs_dim,
@@ -73,6 +89,31 @@ class TD3Agent(object):
                  pi_lr=0.001,
                  polyak=0.995,
                  ):
+        """Initialize the Agent.
+
+        Args:
+            obs_dim: int, The dimensions of obs vector.
+            act_dim: int, The dimensions of act vector.
+            act_space_high: float, The maximum value act can take.
+            gamma: float,  Discount factor. (Always between 0 and 1.)
+            target_noise: float, Stddev for smoothing noise added to target 
+                policy.
+            noise_clip: float, Limit for absolute value of target policy 
+                smoothing noise.
+            q_lr: float, Learning rate for Q-networks.
+            pi_lr: float, Learning rate for policy.
+            polyak: float, Interpolation factor in polyak averaging for target 
+                networks.
+        """    
+        tf.logging.info(f'\t obs_dim: {obs_dim}')
+        tf.logging.info(f'\t act_dim: {act_dim}')
+        tf.logging.info(f'\t act_space_high: {act_space_high}')
+        tf.logging.info(f'\t gamma: {gamma}')
+        tf.logging.info(f'\t target_noise: {target_noise}')
+        tf.logging.info(f'\t noise_clip: {noise_clip}')
+        tf.logging.info(f'\t q_lr: {q_lr}')
+        tf.logging.info(f'\t pi_lr: {pi_lr}')     
+        tf.logging.info(f'\t polyak: {polyak}')
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.act_space_high = act_space_high
@@ -130,15 +171,17 @@ class TD3Agent(object):
             _, self.q1_targ, self.q2_targ, _ = target_net.network_output()
     
     def update_q(self, feed_dict):
-        self.sess.run(self.train_q_op, feed_dict=feed_dict)
+        _, q_loss = self.sess.run([self.train_q_op, self.q_loss], feed_dict=feed_dict)
+        return q_loss
 
     def update_pi(self, feed_dict):
-        self.sess.run(self.train_pi_op, feed_dict=feed_dict)
+        _, pi_loss = self.sess.run([self.train_pi_op, self.pi_loss], feed_dict=feed_dict)
+        return pi_loss
 
     def update_target(self):
         self.sess.run(self.target_update)
 
-    def select_action(self, obs, noise):
+    def select_action(self, obs, noise=0.):
         act = self.sess.run(self.pi, feed_dict={self.obs_ph: obs})[0]
         act += noise * np.random.randn(self.act_dim)
         return np.clip(act, -self.act_space_high, self.act_space_high)
@@ -151,16 +194,46 @@ class TD3Runner(object):
                  seed, 
                  epochs=50,
                  train_epoch_len=5000,
-                 random_acts=1000,
+                 test_epoch_len=2000,
+                 random_act=1000,
                  batch_size=32,
                  buffer_size=int(1e6),
                  act_noise=0.1,
                  policy_delay=2,
                  logger_kwargs=dict()):
+        """Initialize the Runner object.
+
+        Args:
+            env: str, Name of the environment.
+            seed: int, Seed for random number generators.
+            epochs: int, Number of epochs to run and train agent.
+            train_epoch_len: int, Number of steps of interact (state-act pairs)
+                for the agent and the environment in each training epoch.
+            test_epoch_len: int, Number of steps of interact (state-act pairs)
+                for the agent and the environment in each testing epoch.
+            random_act: int, Number of steps to take random action.
+            batch_size: int, Minibatch size for SGD.
+            buffer_size: int, Maximum length of replay buffer.
+            act_noise: float, Standard deviation for Gaussian exploration noise added 
+                to policy at trainning time.(At test time, no noise is added.)
+            policy_delay: int, Policy will only be updated once every 
+                policy_delay times for each update of the Q-networks.
+            logger_kwargs: int, Keyword args for Epochlogger.
+        """
+        tf.logging.info(f'\t env: {env}')
+        tf.logging.info(f'\t seed: {seed}')
+        tf.logging.info(f'\t epochs: {epochs}')
+        tf.logging.info(f'\t train_epoch_len: {train_epoch_len}')
+        tf.logging.info(f'\t random_act: {random_act}')
+        tf.logging.info(f'\t batch_size: {batch_size}')
+        tf.logging.info(f'\t buffer_size: {buffer_size}')
+        tf.logging.info(f'\t act_noise: {act_noise}')
+        tf.logging.info(f'\t policy_delay: {policy_delay}')
         self.env = gym.make(env)
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
-        self.random_acts = random_acts
+        self.test_epoch_len = test_epoch_len
+        self.random_act = random_act
         self.batch_size = batch_size
         self.act_noise = act_noise
         self.policy_delay = policy_delay
@@ -181,9 +254,9 @@ class TD3Runner(object):
         ep_r, ep_len = 0, 0
         obs = self.env.reset()
         for step in range(self.train_epoch_len):
-            if self.random_acts:
+            if self.random_act:
                 act = self.env.action_space.sample()
-                self.random_acts -= 1
+                self.random_act -= 1
             else:
                 act = self.agent.select_action(obs[None, :], self.act_noise)
             next_obs, rew, done, info = self.env.step(act)
@@ -199,7 +272,7 @@ class TD3Runner(object):
                 (in accordance with source code of TD3 published by
                 original authors).
                 """
-                if not self.random_acts:
+                if not self.random_act:
                     for i in range(ep_len):
                         obs_buf, act_buf, rew_buf, next_obs_buf, done_buf = self.buffer.sample_batch(self.batch_size)
                         feed_dict = {
@@ -209,11 +282,29 @@ class TD3Runner(object):
                             self.agent.next_obs_ph: next_obs_buf,
                             self.agent.done_ph: done_buf,
                         }
-                        self.agent.update_q(feed_dict)
+                        q_loss = self.agent.update_q(feed_dict)
+                        logger.store(QLoss=q_loss)
                         if i % self.policy_delay == 0:
-                            self.agent.update_pi(feed_dict)
+                            pi_loss = self.agent.update_pi(feed_dict)
+                            logger.store(PiLoss=pi_loss)
                         self.agent.update_target()
                 logger.store(EpRet=ep_r, EpLen=ep_len)
+                obs = self.env.reset()
+                ep_r, ep_len = 0, 0
+
+    def _run_test_phase(self, logger):
+        ep_r, ep_len = 0, 0
+        obs = self.env.reset()
+        for step in range(self.test_epoch_len):
+            act = self.agent.select_action(obs[None, :])
+            next_obs, rew, done, info = self.env.step(act)
+            ep_r += rew
+            ep_len += 1
+            obs = next_obs
+            
+            if done or ep_len == self.max_ep_len:
+                logger.store(TestEpRet=ep_r, TestEpLen=ep_len)
+
                 obs = self.env.reset()
                 ep_r, ep_len = 0, 0
             
@@ -222,9 +313,14 @@ class TD3Runner(object):
         start_time = time.time()
         for epoch in range(self.epochs):
             self._run_train_phase(logger)
+            self._run_test_phase(logger)
             logger.log_tabular('Epoch', epoch + 1)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('TestEpRet', with_min_and_max=True)
+            logger.log_tabular('TestEpLen', average_only=True)
+            logger.log_tabular('QLoss', average_only=True)
+            logger.log_tabular('PiLoss', average_only=True)
             logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
@@ -240,6 +336,7 @@ if __name__ == '__main__':
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs('td3', args.env, args.seed)
 
+    tf.logging.set_verbosity(tf.logging.INFO)
     runner = TD3Runner(env=args.env, seed=args.seed, logger_kwargs=logger_kwargs)
     runner.run_experiment()
     

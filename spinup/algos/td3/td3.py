@@ -1,7 +1,10 @@
 
+import time
 import gym
 import numpy as np
 import tensorflow as tf
+
+from spinup.utils.logx import EpochLogger
 
 
 class TD3Buffer(object):
@@ -135,8 +138,10 @@ class TD3Agent(object):
     def update_target(self):
         self.sess.run(self.target_update)
 
-    def select_action(self, obs):
-        return self.sess.run(self.pi, feed_dict={self.obs_ph: obs})[0]
+    def select_action(self, obs, noise):
+        act = self.sess.run(self.pi, feed_dict={self.obs_ph: obs})[0]
+        act += noise * np.random.randn(self.act_dim)
+        return np.clip(act, -self.act_space_high, self.act_space_high)
 
 
 class TD3Runner(object):
@@ -146,16 +151,21 @@ class TD3Runner(object):
                  seed, 
                  epochs=50,
                  train_epoch_len=5000,
-                 start_learn=1000,
+                 random_acts=1000,
                  batch_size=32,
                  buffer_size=int(1e6),
-                 policy_delay=2):
+                 act_noise=0.1,
+                 policy_delay=2,
+                 logger_kwargs=dict()):
         self.env = gym.make(env)
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
-        self.start_learn = start_learn
+        self.random_acts = random_acts
         self.batch_size = batch_size
+        self.act_noise = act_noise
         self.policy_delay = policy_delay
+        self.logger_kwargs = logger_kwargs
+        self.max_ep_len = self.env.spec.timestep_limit
 
         self.env.seed(seed)
         np.random.seed(seed)
@@ -167,37 +177,56 @@ class TD3Runner(object):
         self.agent = TD3Agent(obs_dim, act_dim, act_space_high)
         self.buffer = TD3Buffer(obs_dim, act_dim, buffer_size)
 
-    def _run_train_phase(self):
+    def _run_train_phase(self, logger):
         ep_r, ep_len = 0, 0
         obs = self.env.reset()
         for step in range(self.train_epoch_len):
-            act = self.agent.select_action(obs[None, :])
+            if self.random_acts:
+                act = self.env.action_space.sample()
+                self.random_acts -= 1
+            else:
+                act = self.agent.select_action(obs[None, :], self.act_noise)
             next_obs, rew, done, info = self.env.step(act)
-            self.buffer.store(obs, act, rew, next_obs, done)
             ep_r += rew
             ep_len += 1
-            if self.buffer.size > self.start_learn:
-                obs_buf, act_buf, rew_buf, next_obs_buf, done_buf = self.buffer.sample_batch(self.batch_size)
-                feed_dict = {
-                    self.agent.obs_ph: obs_buf,
-                    self.agent.act_ph: act_buf,
-                    self.agent.rew_ph: rew_buf,
-                    self.agent.next_obs_ph: next_obs_buf,
-                    self.agent.done_ph: done_buf,
-                }
-                self.agent.update_q(feed_dict)
-                if step % self.policy_delay == 0:
-                    self.agent.update_pi(feed_dict)
-                self.agent.update_target()
+            done = False if ep_len == self.max_ep_len else done
+            self.buffer.store(obs, act, rew, next_obs, done)
             obs = next_obs
-            if done:
-                print(ep_r)
+            
+            if done or ep_len == self.max_ep_len:
+                """
+                Perform all TD3 updates at the end of the trajectory
+                (in accordance with source code of TD3 published by
+                original authors).
+                """
+                for i in range(ep_len):
+                    obs_buf, act_buf, rew_buf, next_obs_buf, done_buf = self.buffer.sample_batch(self.batch_size)
+                    feed_dict = {
+                        self.agent.obs_ph: obs_buf,
+                        self.agent.act_ph: act_buf,
+                        self.agent.rew_ph: rew_buf,
+                        self.agent.next_obs_ph: next_obs_buf,
+                        self.agent.done_ph: done_buf,
+                    }
+                    self.agent.update_q(feed_dict)
+                    if i % self.policy_delay == 0:
+                        self.agent.update_pi(feed_dict)
+                    self.agent.update_target()
+                logger.store(EpRet=ep_r, EpLen=ep_len)
                 obs = self.env.reset()
-                ep_r, ep_len = 0, 0        
-
+                ep_r, ep_len = 0, 0
+            
     def run_experiment(self):
+        logger = EpochLogger(**self.logger_kwargs)
+        start_time = time.time()
         for epoch in range(self.epochs):
-            self._run_train_phase()
+            self._run_train_phase(logger)
+            logger.log_tabular('Epoch', epoch + 1)
+            logger.log_tabular('EpRet', with_min_and_max=True)
+            logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
+            logger.log_tabular('Time', time.time() - start_time)
+            logger.dump_tabular()
 
 
 if __name__ == '__main__':
@@ -207,6 +236,9 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=0)
     args = parser.parse_args()
 
-    runner = TD3Runner(args.env, args.seed)
+    from spinup.utils.run_utils import setup_logger_kwargs
+    logger_kwargs = setup_logger_kwargs('td3', args.env, args.seed)
+
+    runner = TD3Runner(env=args.env, seed=args.seed, logger_kwargs=logger_kwargs)
     runner.run_experiment()
     

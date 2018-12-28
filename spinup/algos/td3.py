@@ -128,6 +128,7 @@ class TD3Agent(object):
         q1_loss = tf.reduce_mean((self.q1 - y)**2)
         q2_loss = tf.reduce_mean((self.q2 - y)**2)
         self.q_loss = q1_loss + q2_loss
+        self.q_loss = q1_loss
         self.train_q_op = tf.train.AdamOptimizer(q_lr).minimize(self.q_loss)
 
         pi_params = self._get_vars('main/pi')
@@ -331,12 +332,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='Pendulum-v0')
     parser.add_argument('--seed', '-s', type=int, default=0)
+    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--extra_exp_name', '-e', type=str, default='')
     args = parser.parse_args()
 
     from spinup.utils.run_utils import setup_logger_kwargs
-    logger_kwargs = setup_logger_kwargs('td3', args.env, args.seed)
+    logger_kwargs = setup_logger_kwargs('td3', args.env, args.seed, extra_exp_name=args.extra_exp_name)
 
     tf.logging.set_verbosity(tf.logging.INFO)
-    runner = TD3Runner(env=args.env, seed=args.seed, logger_kwargs=logger_kwargs)
+    runner = TD3Runner(env=args.env, seed=args.seed, epochs=args.epochs, logger_kwargs=logger_kwargs)
     runner.run_experiment()
     

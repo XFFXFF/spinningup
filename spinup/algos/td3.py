@@ -128,7 +128,6 @@ class TD3Agent(object):
         q1_loss = tf.reduce_mean((self.q1 - y)**2)
         q2_loss = tf.reduce_mean((self.q2 - y)**2)
         self.q_loss = q1_loss + q2_loss
-        self.q_loss = q1_loss
         self.train_q_op = tf.train.AdamOptimizer(q_lr).minimize(self.q_loss)
 
         pi_params = self._get_vars('main/pi')

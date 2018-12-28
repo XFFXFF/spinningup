@@ -34,7 +34,7 @@ DEFAULT_SHORTHAND = True
 # experiments.
 WAIT_BEFORE_LAUNCH = 5
 
-def setup_logger_kwargs(exp_name, env_name, seed=None, data_dir=None, datestamp=False):
+def setup_logger_kwargs(exp_name, env_name, seed=None, data_dir=None, datestamp=False, extra_exp_name=None):
     """
     Sets up the output_dir for a logger and returns a dict for logger kwargs.
 
@@ -91,6 +91,9 @@ def setup_logger_kwargs(exp_name, env_name, seed=None, data_dir=None, datestamp=
             subfolder = ''.join([hms_time, '-', exp_name, '_s', str(seed)])
         else:
             subfolder = ''.join(['seed', str(seed)])
+        
+        if extra_exp_name:
+            subfolder = osp.join(subfolder, extra_exp_name)
         relpath = osp.join(relpath, subfolder)
 
     data_dir = data_dir or DEFAULT_DATA_DIR

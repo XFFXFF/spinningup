@@ -6,7 +6,6 @@ import tensorflow as tf
 from tensorflow.distributions import Normal
 
 from spinup.utils.logx import EpochLogger
-from spinup.algos.sac.core import apply_squashing_func
 
 
 EPS = 1E-8
@@ -67,7 +66,6 @@ class SACNet(object):
         with tf.variable_scope('pi'):
             self.mu, self.pi, self.logp_pi = self._gaussian_policy(obs, act_dim, hidden_sizes, activation)
             self.mu, self.pi, self.logp_pi = self._apply_squashing_func(self.mu, self.pi, self.logp_pi)
-            # self.mu, self.pi, self.logp_pi = apply_squashing_func(self.mu, self.pi, self.logp_pi)
             self.mu *= act_space_high
             self.pi *= act_space_high
         with tf.variable_scope('q1'):
@@ -103,8 +101,16 @@ class SACNet(object):
     def _apply_squashing_func(self, mu, pi, logp_pi):
         mu = tf.tanh(mu)
         pi = tf.tanh(pi)
-        logp_pi -= tf.reduce_sum(tf.log(tf.clip_by_value(1 - pi**2, 0, 1) + EPS), axis=1)
+        #The performance of using clip_by_value or clip_but_pass_gradient is almost the same by testing
+        #    on HalfCheetach. 
+        # logp_pi -= tf.reduce_sum(tf.log(tf.clip_by_value(1 - pi**2, 0, 1) + EPS), axis=1)
+        logp_pi -= tf.reduce_sum(tf.log(self.clip_but_pass_gradient(1 - pi**2, l=0, u=1) + EPS), axis=1)
         return mu, pi, logp_pi
+
+    def clip_but_pass_gradient(self, x, l=-1., u=1.):
+        clip_up = tf.cast(x > u, tf.float32)
+        clip_low = tf.cast(x < l, tf.float32)
+        return x + tf.stop_gradient((u - x)*clip_up + (l - x)*clip_low)
     
     def network_output(self):
         return self.pi, self.q1, self.q1_pi, self.q2, self.q2_pi, self.v, self.logp_pi
@@ -119,7 +125,6 @@ class SACAgent(object):
                  act_space_high,
                  gamma=0.99,
                  alpha=0.2,
-                 target_noise=0.2,
                  noise_clip=0.5,
                  q_lr=0.001,
                  v_lr=0.001,
@@ -135,8 +140,6 @@ class SACAgent(object):
             gamma: float, Discount factor. (Always between 0 and 1.)
             alpha: float, Entropy regularization coefficient. (Equivalent to 
                 inverse of reward scale in the original SAC paper.)
-            target_noise: float, Stddev for smoothing noise added to target 
-                policy.
             noise_clip: float, Limit for absolute value of target policy 
                 smoothing noise.
             q_lr: float, Learning rate for Q-networks.
@@ -148,7 +151,6 @@ class SACAgent(object):
         tf.logging.info(f'\t act_dim: {act_dim}')
         tf.logging.info(f'\t act_space_high: {act_space_high}')
         tf.logging.info(f'\t gamma: {gamma}')
-        tf.logging.info(f'\t target_noise: {target_noise}')
         tf.logging.info(f'\t noise_clip: {noise_clip}')
         tf.logging.info(f'\t q_lr: {q_lr}')
         tf.logging.info(f'\t pi_lr: {pi_lr}')     
@@ -156,7 +158,6 @@ class SACAgent(object):
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.act_space_high = act_space_high
-        self.target_noise = target_noise
         self.noise_clip = noise_clip
         self.obs_ph, self.act_ph, self.rew_ph, self.next_obs_ph, self.done_ph \
                                         = self._create_placeholders()

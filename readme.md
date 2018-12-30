@@ -16,7 +16,7 @@ My design principle:
 * PPO
 * DDPG
 * TD3
-*
+* SAC
 
 
 

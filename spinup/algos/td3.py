@@ -195,8 +195,8 @@ class TD3Runner(object):
                  epochs=50,
                  train_epoch_len=5000,
                  test_epoch_len=2000,
-                 random_act=1000,
-                 batch_size=32,
+                 random_act=10000,
+                 batch_size=100,
                  buffer_size=int(1e6),
                  act_noise=0.1,
                  policy_delay=2,
@@ -272,22 +272,21 @@ class TD3Runner(object):
                 (in accordance with source code of TD3 published by
                 original authors).
                 """
-                if not self.random_act:
-                    for i in range(ep_len):
-                        obs_buf, act_buf, rew_buf, next_obs_buf, done_buf = self.buffer.sample_batch(self.batch_size)
-                        feed_dict = {
-                            self.agent.obs_ph: obs_buf,
-                            self.agent.act_ph: act_buf,
-                            self.agent.rew_ph: rew_buf,
-                            self.agent.next_obs_ph: next_obs_buf,
-                            self.agent.done_ph: done_buf,
-                        }
-                        q_loss = self.agent.update_q(feed_dict)
-                        logger.store(QLoss=q_loss)
-                        if i % self.policy_delay == 0:
-                            pi_loss = self.agent.update_pi(feed_dict)
-                            logger.store(PiLoss=pi_loss)
-                        self.agent.update_target()
+                for i in range(ep_len):
+                    obs_buf, act_buf, rew_buf, next_obs_buf, done_buf = self.buffer.sample_batch(self.batch_size)
+                    feed_dict = {
+                        self.agent.obs_ph: obs_buf,
+                        self.agent.act_ph: act_buf,
+                        self.agent.rew_ph: rew_buf,
+                        self.agent.next_obs_ph: next_obs_buf,
+                        self.agent.done_ph: done_buf,
+                    }
+                    q_loss = self.agent.update_q(feed_dict)
+                    logger.store(QLoss=q_loss)
+                    if i % self.policy_delay == 0:
+                        pi_loss = self.agent.update_pi(feed_dict)
+                        logger.store(PiLoss=pi_loss)
+                    self.agent.update_target()
                 logger.store(EpRet=ep_r, EpLen=ep_len)
                 obs = self.env.reset()
                 ep_r, ep_len = 0, 0

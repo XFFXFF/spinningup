@@ -92,6 +92,13 @@ class DQNAgent(object):
         q_acts = self.sess.run(self.q_acts, feed_dict={self.obs_ph: obs})
         return np.argmax(q_acts)
 
+    def train_q(self, feed_dict):
+        loss, _ = self.sess.run([self.loss, self.train_op], feed_dict=feed_dict)
+        return loss
+    
+    def update_target(self, feed_dict):
+        self.sess.run([self.update_target_op, feed_dict=feed_dict])
+
 
 class DQNRunner(object):
 
@@ -166,7 +173,7 @@ class DQNRunner(object):
             self.obs = self.env.reset()
             self.ep_len, self.ep_r = 0, 0
 
-    def _train_one_step(self):
+    def _train_one_step(self, logger):
         if (self.t > self.start_learn and \
             self.t % self.learning_freq == 0 and \
             self.replay_buffer.can_sample(self.batch_size)):
@@ -180,31 +187,35 @@ class DQNRunner(object):
                 self.agent.done_ph: done_batch,
                 # self.agent.lr_ph: lr,
             }
-            self.agent.sess.run(self.agent.train_op, feed_dict=feed_dict)
+            loss = self.agent.train_q(feed_dict)
+            logger.store(Loss=loss)
             if self.learning_step % self.target_update_freq == 0:
-                self.agent.sess.run(self.agent.update_target_op, feed_dict=feed_dict)
+                self.agent.update_target(feed_dict)
             self.learning_step += 1
             
     def _run_train_phase(self, logger):
         for step in range(self.train_epoch_len):
             self._run_one_step(logger)
-            self._train_one_step()
+            self._train_one_step(logger)
 
     def run_experiment(self):
         logger = EpochLogger(**self.logger_kwargs)
         start_time = time.time()
         for epoch in range(self.epochs):
             self._run_train_phase(logger)
-            logger.log_tabular('Epoch', epoch)
+            logger.log_tabular('Epoch', epoch + 1)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('Loss', average_only=True)
+            logger.log_tabular('Exploration', self.exploration.value(self.t))
+            logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, default='Breakout')
+    parser.add_argument('--env_name', type=str, default='Pong')
     parser.add_argument('--seed', '-s', type=int, default=0)
     args = parser.parse_args()
 

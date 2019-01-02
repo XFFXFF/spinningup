@@ -206,7 +206,10 @@ class DQNRunner(object):
             logger.log_tabular('Epoch', epoch + 1)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
-            logger.log_tabular('Loss', average_only=True)
+            try:
+                logger.log_tabular('Loss', average_only=True)
+            except:
+                pass
             logger.log_tabular('Exploration', self.exploration.value(self.t))
             logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)

@@ -84,7 +84,7 @@ class DQNAgent(object):
             net = DQNNet(obs_float, self.act_n)
             self.q_acts = net.network_output()
         with tf.variable_scope('target'):
-            next_obs_float = tf.cast(self.obs_ph, tf.float32) / 255.0
+            next_obs_float = tf.cast(self.next_obs_ph, tf.float32) / 255.0
             net = DQNNet(next_obs_float, self.act_n)
             self.q_targ_acts = net.network_output()
 
@@ -209,7 +209,7 @@ class DQNRunner(object):
             try:
                 logger.log_tabular('Loss', average_only=True)
             except:
-                pass
+                logger.log_tabular('Loss', 0)
             logger.log_tabular('Exploration', self.exploration.value(self.t))
             logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)

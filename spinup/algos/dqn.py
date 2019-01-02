@@ -97,7 +97,7 @@ class DQNAgent(object):
         return loss
     
     def update_target(self, feed_dict):
-        self.sess.run([self.update_target_op, feed_dict=feed_dict])
+        self.sess.run(self.update_target_op, feed_dict=feed_dict)
 
 
 class DQNRunner(object):

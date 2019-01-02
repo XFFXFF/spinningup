@@ -95,8 +95,8 @@ class DQNRunner(object):
                  env_name, 
                  seed,
                  epochs=200,
-                 train_epoch_len=100,
-                 start_learn=500,
+                 train_epoch_len=10000,
+                 start_learn=50000,
                  target_update_freq=10000,
                  buffer_size=int(1e6),
                  batch_size=32,
@@ -125,7 +125,7 @@ class DQNRunner(object):
         self.exploration = PiecewiseSchedule(
             [
                 (0, 1.0),
-                (1e3, 0.1),
+                (1e6, 0.1),
                 (epochs * train_epoch_len / 2, 0.01)
             ], outside_value=0.01,
         )

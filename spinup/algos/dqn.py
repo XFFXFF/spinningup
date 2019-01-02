@@ -101,6 +101,7 @@ class DQNRunner(object):
                  epochs=20000,
                  train_epoch_len=10000,
                  start_learn=50000,
+                 learning_freq=4,
                  target_update_freq=10000,
                  buffer_size=int(1e6),
                  batch_size=32,
@@ -111,6 +112,7 @@ class DQNRunner(object):
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
         self.start_learn = start_learn
+        self.learning_freq = learning_freq
         self.target_update_freq = target_update_freq
         self.batch_size = batch_size
         self.logger_kwargs = logger_kwargs
@@ -125,6 +127,7 @@ class DQNRunner(object):
         self.obs = self.env.reset()
         self.ep_len, self.ep_r = 0, 0
         self.t = 0
+        self.learning_step = 0
 
         self.exploration = PiecewiseSchedule(
             [
@@ -164,7 +167,9 @@ class DQNRunner(object):
             self.ep_len, self.ep_r = 0, 0
 
     def _train_one_step(self):
-        if self.t > self.start_learn and self.replay_buffer.can_sample(self.batch_size):
+        if (self.t > self.start_learn and \
+            self.t % self.learning_freq == 0 and \
+            self.replay_buffer.can_sample(self.batch_size)):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer.sample(self.batch_size)
             # lr = self.lr_schedule.value(self.t)
             feed_dict = {
@@ -176,8 +181,9 @@ class DQNRunner(object):
                 # self.agent.lr_ph: lr,
             }
             self.agent.sess.run(self.agent.train_op, feed_dict=feed_dict)
-            if self.t % self.target_update_freq == 0:
+            if self.learning_step % self.target_update_freq == 0:
                 self.agent.sess.run(self.agent.update_target_op, feed_dict=feed_dict)
+            self.learning_step += 1
             
     def _run_train_phase(self, logger):
         for step in range(self.train_epoch_len):

@@ -522,7 +522,8 @@ class ExperimentGrid:
         preparing = colorize('Preparing to run the following experiments...', 
                              color='green', bold=True)
         joined_var_names = '\n'.join(var_names)
-        announcement = f"\n{preparing}\n\n{joined_var_names}\n\n{line}"
+        # announcement = "\n{preparing}\n\n{joined_var_names}\n\n{line}"
+        announcement = "\n{}\n\n{}\n\n{}".foramt(preparing, joined_var_names, line)
         print(announcement)
 
 

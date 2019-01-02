@@ -59,7 +59,7 @@ class DQNAgent(object):
         main_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='main')
         target_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target')
 
-        self.train_op = tf.train.AdamOptimizer(0.0001).minimize(self.loss)
+        self.train_op = tf.train.AdamOptimizer(self.lr_ph).minimize(self.loss)
 
         self.update_target_op = tf.group([tf.assign(target_var, main_var) \
                                 for target_var, main_var in zip(target_vars, main_vars)])
@@ -105,7 +105,7 @@ class DQNRunner(object):
     def __init__(self,
                  env_name, 
                  seed,
-                 epochs=20000,
+                 epochs=500,
                  train_epoch_len=10000,
                  start_learn=50000,
                  learning_freq=4,
@@ -139,25 +139,25 @@ class DQNRunner(object):
         self.exploration = PiecewiseSchedule(
             [
                 (0, 1.0),
-                (1e6, 0.1),
-                (epochs * train_epoch_len / 2, 0.01)
+                (epochs / 10, 0.1),
+                (epochs / 2, 0.01)
             ], outside_value=0.01,
         )
 
         self.lr_schedule = PiecewiseSchedule(
             [
             (0, 1e-4),
-            (epochs * train_epoch_len / 10, 1e-4),
-            (epochs * train_epoch_len / 2, 5e-5)
+            (epochs / 10, 1e-4),
+            (epochs / 2, 5e-5)
             ], outside_value=5e-5,
         )
 
         self.replay_buffer = ReplayBuffer(buffer_size, frame_stack, lander=False)
         self.agent = DQNAgent(obs_space, act_space)
 
-    def _run_one_step(self, logger):
+    def _run_one_step(self, logger, epoch):
         idx = self.replay_buffer.store_frame(self.obs)
-        epsilon = self.exploration.value(self.t)
+        epsilon = self.exploration.value(epoch)
         if np.random.random() < epsilon:
             act = self.env.action_space.sample()
         else:
@@ -173,19 +173,19 @@ class DQNRunner(object):
             self.obs = self.env.reset()
             self.ep_len, self.ep_r = 0, 0
 
-    def _train_one_step(self, logger):
+    def _train_one_step(self, logger, epoch):
         if (self.t > self.start_learn and \
             self.t % self.learning_freq == 0 and \
             self.replay_buffer.can_sample(self.batch_size)):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer.sample(self.batch_size)
-            # lr = self.lr_schedule.value(self.t)
+            lr = self.lr_schedule.value(epoch)
             feed_dict = {
                 self.agent.obs_ph: obs_batch,
                 self.agent.act_ph: act_batch,
                 self.agent.rew_ph: rew_batch,
                 self.agent.next_obs_ph: next_obs_batch,
                 self.agent.done_ph: done_batch,
-                # self.agent.lr_ph: lr,
+                self.agent.lr_ph: lr,
             }
             loss = self.agent.train_q(feed_dict)
             logger.store(Loss=loss)
@@ -193,17 +193,17 @@ class DQNRunner(object):
                 self.agent.update_target(feed_dict)
             self.learning_step += 1
             
-    def _run_train_phase(self, logger):
+    def _run_train_phase(self, logger, epoch):
         for step in range(self.train_epoch_len):
-            self._run_one_step(logger)
-            self._train_one_step(logger)
+            self._run_one_step(logger, epoch)
+            self._train_one_step(logger, epoch)
 
     def run_experiment(self):
         logger = EpochLogger(**self.logger_kwargs)
         start_time = time.time()
-        for epoch in range(self.epochs):
-            self._run_train_phase(logger)
-            logger.log_tabular('Epoch', epoch + 1)
+        for epoch in range(1, self.epochs + 1):
+            self._run_train_phase(logger, epoch)
+            logger.log_tabular('Epoch', epoch)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
             try:
@@ -211,7 +211,7 @@ class DQNRunner(object):
             except:
                 logger.log_tabular('Loss', 0)
             logger.log_tabular('Exploration', self.exploration.value(self.t))
-            logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
+            logger.log_tabular('TotalEnvInteracts', epoch * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
 

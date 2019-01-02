@@ -11,7 +11,8 @@ from spinup.utils.logx import EpochLogger
 
 
 def create_atari_env(env_name):
-    full_env_name = f'{env_name}NoFrameskip-v4'
+    # full_env_name = f'{env_name}NoFrameskip-v4'
+    full_env_name = '{}NoFrameskip-v4'.format(env_name)
     env = gym.make(full_env_name)
     env = wrap_deepmind(env)
     return env
@@ -32,6 +33,7 @@ class DQNNet(object):
     
     def network_output(self):
         return self.out
+
 
 class DQNAgent(object):
 
@@ -57,7 +59,7 @@ class DQNAgent(object):
         main_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='main')
         target_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target')
 
-        self.train_op = tf.train.AdamOptimizer(self.lr_ph).minimize(self.loss)
+        self.train_op = tf.train.AdamOptimizer(0.0001).minimize(self.loss)
 
         self.update_target_op = tf.group([tf.assign(target_var, main_var) \
                                 for target_var, main_var in zip(target_vars, main_vars)])
@@ -69,19 +71,21 @@ class DQNAgent(object):
     def _create_placeholders(self):
         img_h, img_w, img_c = self.obs_space.shape
         input_shape = (img_h, img_w, img_c * self.frame_stack)
-        self.obs_ph = tf.placeholder(tf.float32, [None] + list(input_shape))
+        self.obs_ph = tf.placeholder(tf.uint8, [None] + list(input_shape))
         self.act_ph = tf.placeholder(tf.int32, [None])
         self.rew_ph = tf.placeholder(tf.float32, [None])
-        self.next_obs_ph = tf.placeholder(tf.float32, [None] + list(input_shape))
+        self.next_obs_ph = tf.placeholder(tf.uint8, [None] + list(input_shape))
         self.done_ph = tf.placeholder(tf.float32, [None])
         self.lr_ph = tf.placeholder(tf.float32, None)
 
     def _create_network(self):
         with tf.variable_scope('main'):
-            net = DQNNet(self.obs_ph, self.act_n)
+            obs_float = tf.cast(self.obs_ph, tf.float32) / 255.0
+            net = DQNNet(obs_float, self.act_n)
             self.q_acts = net.network_output()
         with tf.variable_scope('target'):
-            net = DQNNet(self.next_obs_ph, self.act_n)
+            next_obs_float = tf.cast(self.obs_ph, tf.float32) / 255.0
+            net = DQNNet(next_obs_float, self.act_n)
             self.q_targ_acts = net.network_output()
 
     def select_action(self, obs):
@@ -94,7 +98,7 @@ class DQNRunner(object):
     def __init__(self,
                  env_name, 
                  seed,
-                 epochs=200,
+                 epochs=20000,
                  train_epoch_len=10000,
                  start_learn=50000,
                  target_update_freq=10000,
@@ -143,7 +147,8 @@ class DQNRunner(object):
 
     def _run_one_step(self, logger):
         idx = self.replay_buffer.store_frame(self.obs)
-        if np.random.random() < self.exploration.value(self.t):
+        epsilon = self.exploration.value(self.t)
+        if np.random.random() < epsilon:
             act = self.env.action_space.sample()
         else:
             act = self.agent.select_action(self.replay_buffer.encode_recent_observation()[None, :])
@@ -161,22 +166,19 @@ class DQNRunner(object):
     def _train_one_step(self):
         if self.t > self.start_learn and self.replay_buffer.can_sample(self.batch_size):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer.sample(self.batch_size)
-            obs_batch = (obs_batch / 255.0).astype(np.float32)
-            next_obs_batch = (next_obs_batch / 255.0).astype(np.float32)
-            lr = self.lr_schedule.value(self.t)
+            # lr = self.lr_schedule.value(self.t)
             feed_dict = {
                 self.agent.obs_ph: obs_batch,
                 self.agent.act_ph: act_batch,
                 self.agent.rew_ph: rew_batch,
                 self.agent.next_obs_ph: next_obs_batch,
                 self.agent.done_ph: done_batch,
-                self.agent.lr_ph: lr,
+                # self.agent.lr_ph: lr,
             }
             self.agent.sess.run(self.agent.train_op, feed_dict=feed_dict)
             if self.t % self.target_update_freq == 0:
                 self.agent.sess.run(self.agent.update_target_op, feed_dict=feed_dict)
             
-
     def _run_train_phase(self, logger):
         for step in range(self.train_epoch_len):
             self._run_one_step(logger)
@@ -187,6 +189,7 @@ class DQNRunner(object):
         start_time = time.time()
         for epoch in range(self.epochs):
             self._run_train_phase(logger)
+            logger.log_tabular('Epoch', epoch)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
             logger.log_tabular('Time', time.time() - start_time)

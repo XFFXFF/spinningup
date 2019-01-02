@@ -95,8 +95,8 @@ class DQNRunner(object):
                  env_name, 
                  seed,
                  epochs=200,
-                 train_epoch_len=10000,
-                 start_learn=50000,
+                 train_epoch_len=100,
+                 start_learn=500,
                  target_update_freq=10000,
                  buffer_size=int(1e6),
                  batch_size=32,
@@ -125,7 +125,7 @@ class DQNRunner(object):
         self.exploration = PiecewiseSchedule(
             [
                 (0, 1.0),
-                (1e6, 0.1),
+                (1e3, 0.1),
                 (epochs * train_epoch_len / 2, 0.01)
             ], outside_value=0.01,
         )
@@ -161,6 +161,8 @@ class DQNRunner(object):
     def _train_one_step(self):
         if self.t > self.start_learn and self.replay_buffer.can_sample(self.batch_size):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer.sample(self.batch_size)
+            obs_batch = (obs_batch / 255.0).astype(np.float32)
+            next_obs_batch = (next_obs_batch / 255.0).astype(np.float32)
             lr = self.lr_schedule.value(self.t)
             feed_dict = {
                 self.agent.obs_ph: obs_batch,

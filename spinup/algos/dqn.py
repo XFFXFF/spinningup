@@ -39,7 +39,6 @@ class DQNAgent(object):
                  obs_space,
                  act_space,
                  gamma=0.99,
-                 lr=0.0001,
                  frame_stack=4):
         self.obs_space = obs_space
         self.act_space = act_space
@@ -58,7 +57,7 @@ class DQNAgent(object):
         main_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='main')
         target_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target')
 
-        self.train_op = tf.train.AdamOptimizer(lr).minimize(self.loss)
+        self.train_op = tf.train.AdamOptimizer(self.lr_ph).minimize(self.loss)
 
         self.update_target_op = tf.group([tf.assign(target_var, main_var) \
                                 for target_var, main_var in zip(target_vars, main_vars)])
@@ -75,6 +74,7 @@ class DQNAgent(object):
         self.rew_ph = tf.placeholder(tf.float32, [None])
         self.next_obs_ph = tf.placeholder(tf.float32, [None] + list(input_shape))
         self.done_ph = tf.placeholder(tf.float32, [None])
+        self.lr_ph = tf.placeholder(tf.float32, None)
 
     def _create_network(self):
         with tf.variable_scope('main'):
@@ -130,14 +130,14 @@ class DQNRunner(object):
             ], outside_value=0.01,
         )
 
-        self.learning_rate = PiecewiseSchedule(
+        self.lr_schedule = PiecewiseSchedule(
             [
             (0, 1e-4),
             (epochs * train_epoch_len / 10, 1e-4),
             (epochs * train_epoch_len / 2, 5e-5)
             ], outside_value=5e-5,
         )
-        
+
         self.replay_buffer = ReplayBuffer(buffer_size, frame_stack, lander=False)
         self.agent = DQNAgent(obs_space, act_space)
 
@@ -161,12 +161,14 @@ class DQNRunner(object):
     def _train_one_step(self):
         if self.t > self.start_learn and self.replay_buffer.can_sample(self.batch_size):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer.sample(self.batch_size)
+            lr = self.lr_schedule.value(self.t)
             feed_dict = {
                 self.agent.obs_ph: obs_batch,
                 self.agent.act_ph: act_batch,
                 self.agent.rew_ph: rew_batch,
                 self.agent.next_obs_ph: next_obs_batch,
-                self.agent.done_ph: done_batch
+                self.agent.done_ph: done_batch,
+                self.agent.lr_ph: lr,
             }
             self.agent.sess.run(self.agent.train_op, feed_dict=feed_dict)
             if self.t % self.target_update_freq == 0:
@@ -191,7 +193,7 @@ class DQNRunner(object):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, default='Pong')
+    parser.add_argument('--env_name', type=str, default='Breakout')
     parser.add_argument('--seed', '-s', type=int, default=0)
     args = parser.parse_args()
 

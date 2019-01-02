@@ -54,7 +54,7 @@ class DQNAgent(object):
         q_act = tf.reduce_sum(tf.one_hot(self.act_ph, depth=self.act_n) * self.q_acts, axis=1)
         y = self.rew_ph + (1 - self.done_ph) * gamma * tf.reduce_max(self.q_targ_acts, axis=1)
         y = tf.stop_gradient(y)
-        self.loss = huber_loss(y - q_act)
+        self.loss = tf.reduce_mean(huber_loss(y - q_act))
 
         main_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='main')
         target_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target')

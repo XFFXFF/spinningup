@@ -17,6 +17,7 @@ My design principle:
 * DDPG
 * TD3
 * SAC
+* DQN
 
 
 
@@ -73,3 +74,8 @@ See the page on [plotting results](http://spinningup.openai.com/en/latest/utils/
 ### SAC
 [Soft Actor-Critic](http://spinningup.openai.com/en/latest/algorithms/sac.html), OpenAI/Spinningup.  
 [Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor](https://arxiv.org/abs/1801.01290), Haarnoja et al, 2018
+
+### DQN
+[Human-level control through deep reinforcement
+learning](https://storage.googleapis.com/deepmind-media/dqn/DQNNaturePaper.pdf), Mnih et al. 2013  
+[berkeleydeeprlcourse/homework](https://github.com/berkeleydeeprlcourse/homework/tree/master/hw3)

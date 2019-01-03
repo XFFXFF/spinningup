@@ -36,12 +36,25 @@ class DQNNet(object):
 
 
 class DQNAgent(object):
+    """An implementation of DQN agent."""
 
     def __init__(self,
                  obs_space,
                  act_space,
+                 frame_stack,
                  gamma=0.99,
-                 frame_stack=4):
+                 ):
+        """Initialize the agent.
+
+        Args:
+            obs_space: gym.spaces, observation space.
+            act_space: gym.spaces, action space.
+            frame_stack: int, How many frames to stack as input to the net.
+            gamma: float, Discount factor, (Always between 0 and 1.)
+        """
+        tf.logging.info('obs_space: {}'.format(obs_space))
+        tf.logging.info('act_space: {}'.format(act_space))
+        tf.logging.info('gamma: {}'.format(gamma))
         self.obs_space = obs_space
         self.act_space = act_space
         self.frame_stack = frame_stack
@@ -115,6 +128,32 @@ class DQNRunner(object):
                  frame_stack=4,
                  logger_kwargs=dict(),
                  ):
+        """Initialize the Runner object.
+
+        Args: 
+            env_name: str, Name of the environment.
+            seed: int, Seed of random number generators.
+            epochs: int, Number of epochs to run and train agent.
+            train_epoch_len: int, Number of steps of interactions (state-action pairs)
+                for the agent and the environment in each training epoch.
+            start_learn: int, After how many environment steps to start replaying experiences.
+            learning_freq: int, How many steps of environment to take between every experience replay.
+            target_update_freq: int, How many experience replay rounds (not steps!) to perform between
+                each update to the target Q network.
+            buffer_size: int, How many memories to store in the replay buffer.
+            batch_size: int, How many transitions to sample each time experience is replayed.
+            frame_stack: int, How many frames to stack as input to the net.
+        """
+        tf.logging.info('env_name: {}'.format(env_name))
+        tf.logging.info('seed: {}'.format(seed))
+        tf.logging.info('epochs: {}'.format(epochs))
+        tf.logging.info('train_epoch_len: {}'.format(train_epoch_len))
+        tf.logging.info('start_learn: {}'.format(start_learn))
+        tf.logging.info('learning_freq: {}'.format(learning_freq))
+        tf.logging.info('target_update_freq: {}'.format(target_update_freq))
+        tf.logging.info('buffer_size: {}'.format(buffer_size))
+        tf.logging.info('batch_size: {}'.format(batch_size))
+        tf.logging.info('frame_stack: {}'.format(frame_stack))
         self.env = create_atari_env(env_name)
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
@@ -153,7 +192,7 @@ class DQNRunner(object):
         )
 
         self.replay_buffer = ReplayBuffer(buffer_size, frame_stack, lander=False)
-        self.agent = DQNAgent(obs_space, act_space)
+        self.agent = DQNAgent(obs_space, act_space, frame_stack)
 
     def _run_one_step(self, logger, epoch):
         idx = self.replay_buffer.store_frame(self.obs)
@@ -210,7 +249,8 @@ class DQNRunner(object):
                 logger.log_tabular('Loss', average_only=True)
             except:
                 logger.log_tabular('Loss', 0)
-            logger.log_tabular('Exploration', self.exploration.value(self.t))
+            logger.log_tabular('LearningRate', self.lr_schedule.value(epoch))
+            logger.log_tabular('Exploration', self.exploration.value(epoch))
             logger.log_tabular('TotalEnvInteracts', epoch * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
@@ -224,6 +264,8 @@ if __name__ == '__main__':
 
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(exp_name='dqn', env_name=args.env_name, seed=args.seed)
+
+    tf.logging.set_verbosity(tf.logging.INFO)
     
     runner = DQNRunner(args.env_name, args.seed, logger_kwargs=logger_kwargs)
     runner.run_experiment()

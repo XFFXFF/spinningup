@@ -53,10 +53,15 @@ class DQNAgent(object):
             obs_space: gym.spaces, observation space.
             act_space: gym.spaces, action space.
             frame_stack: int, How many frames to stack as input to the net.
+            batch_size: int, How many transitions to sample each time experience is replayed.
+            vmax: float, The value distribution support is [-vmax, vmax].
+            atom_n: int, The number of buckets of the value function distribution.
             gamma: float, Discount factor, (Always between 0 and 1.)
         """
         tf.logging.info('obs_space: {}'.format(obs_space))
         tf.logging.info('act_space: {}'.format(act_space))
+        tf.logging.info('vmax: {}'.format(vmax))
+        tf.logging.info('atom_n: {}'.format(atom_n))
         tf.logging.info('gamma: {}'.format(gamma))
         self.obs_space = obs_space
         self.act_space = act_space
@@ -115,6 +120,7 @@ class DQNAgent(object):
             _, self.targ_probs, self.q_targ_acts = net.network_netput()
     
     def _build_target_distribution(self):
+        """Builds the C51 target distribution as per Bellemare et al. (2017)."""
         tiled_support = tf.tile(self.support, [self.batch_size])
         tiled_support = tf.reshape(tiled_support, [self.batch_size, self.atom_n])
         gamma_with_done = self.gamma * (1 - self.done_ph)
@@ -129,6 +135,11 @@ class DQNAgent(object):
         return self._project_distribution(target_supports, target_probs)
 
     def _project_distribution(self, target_supports, target_probs):
+        """Projects a batch of (support, weights) onto target_support.
+
+        Based on equation (7) in (Bellemare et al., 2017):
+            https://arxiv.org/abs/1707.06887
+        """
         clipped_target_supports = tf.clip_by_value(target_supports, -self.vmax, self.vmax)[:, None, :]
         tiled_target_supports = tf.tile(clipped_target_supports, [1, self.atom_n, 1])
         tiled_support = tf.tile(self.support[None, :], [self.batch_size, 1])

@@ -18,6 +18,7 @@ My design principle:
 * TD3
 * SAC
 * DQN
+* C51
 
 
 
@@ -54,8 +55,8 @@ See the page on [plotting results](http://spinningup.openai.com/en/latest/utils/
 [High Dimensional Continuous Control Using Generalized Advantage Estimation](https://arxiv.org/abs/1506.02438), Schulman et al. 2016(b)
 
 ### TRPO
-[Trust Region Policy Optimization](https://arxiv.org/abs/1502.05477), Schulman et al. 2015.  
-[Advanced policy gradients (natural gradient, importance sampling)](http://rail.eecs.berkeley.edu/deeprlcourse-fa17/f17docs/lecture_13_advanced_pg.pdf), Joshua Achiam. 2017.  
+[Trust Region Policy Optimization](https://arxiv.org/abs/1502.05477), Schulman et al, 2015.  
+[Advanced policy gradients (natural gradient, importance sampling)](http://rail.eecs.berkeley.edu/deeprlcourse-fa17/f17docs/lecture_13_advanced_pg.pdf), Joshua Achiam, 2017.  
 [Trust Region Policy Optimization](http://spinningup.openai.com/en/latest/algorithms/trpo.html), OpenAI/Spiningup.  
 
 ### PPO 
@@ -64,8 +65,8 @@ See the page on [plotting results](http://spinningup.openai.com/en/latest/utils/
 
 ### DDPG
 [Deep Deterministic Policy Gradient](http://spinningup.openai.com/en/latest/algorithms/ddpg.html), OpenAI/Spinningup.   
-[Deterministic Policy Gradient Algorithms](http://proceedings.mlr.press/v32/silver14.pdf), Silver et al. 2014.  
-[Continuous Control With Deep Reinforcement Learning](https://arxiv.org/abs/1509.02971), Lillicrap et al. 2016.
+[Deterministic Policy Gradient Algorithms](http://proceedings.mlr.press/v32/silver14.pdf), Silver et al, 2014.  
+[Continuous Control With Deep Reinforcement Learning](https://arxiv.org/abs/1509.02971), Lillicrap et al, 2016.
 
 ### TD3
 [Twin Delayed DDPG](http://spinningup.openai.com/en/latest/algorithms/td3.html), OpenAI/Spinningup.  
@@ -73,9 +74,13 @@ See the page on [plotting results](http://spinningup.openai.com/en/latest/utils/
 
 ### SAC
 [Soft Actor-Critic](http://spinningup.openai.com/en/latest/algorithms/sac.html), OpenAI/Spinningup.  
-[Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor](https://arxiv.org/abs/1801.01290), Haarnoja et al, 2018
+[Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor](https://arxiv.org/abs/1801.01290), Haarnoja et al, 2018.
 
 ### DQN
 [Human-level control through deep reinforcement
-learning](https://storage.googleapis.com/deepmind-media/dqn/DQNNaturePaper.pdf), Mnih et al. 2013  
+learning](https://storage.googleapis.com/deepmind-media/dqn/DQNNaturePaper.pdf), Mnih et al, 2013.  
 [berkeleydeeprlcourse/homework](https://github.com/berkeleydeeprlcourse/homework/tree/master/hw3)
+
+### C51
+[A Distributional Perspective on Reinforcement Learning](http://proceedings.mlr.press/v70/bellemare17a.html), Bellemare et al, 2017.  
+Marc G. Bellemare, Pablo Samuel Castro, Carles Gelada, Saurabh Kumar, Subhodeep Moitra. Dopamine, https://github.com/google/dopamine, 2018.

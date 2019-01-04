@@ -309,7 +309,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     from spinup.utils.run_utils import setup_logger_kwargs
-    logger_kwargs = setup_logger_kwargs(exp_name='dqn', env_name=args.env_name, seed=args.seed)
+    logger_kwargs = setup_logger_kwargs(exp_name='c51', env_name=args.env_name, seed=args.seed)
 
     tf.logging.set_verbosity(tf.logging.INFO)
     

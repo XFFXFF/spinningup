@@ -77,7 +77,7 @@ class DQNAgent(object):
         chosen_targ_quantiles = tf.gather_nd(self.targ_quantiles, batch_indexed_targ_acts)
         gamma_with_done = gamma * (1 - self.done_ph)
         gamma_with_done = gamma_with_done[:, None]
-        chosen_targ_quantiles = self.rew_ph[:, None] + gamma_with_done * chosen_act_quantiles
+        chosen_targ_quantiles = self.rew_ph[:, None] + gamma_with_done * chosen_targ_quantiles
 
         diff = tf.stop_gradient(chosen_targ_quantiles) - chosen_act_quantiles
         self.loss = huber_loss(diff) * tf.abs(tau - tf.cast(tf.stop_gradient(diff) < 0, tf.float32))

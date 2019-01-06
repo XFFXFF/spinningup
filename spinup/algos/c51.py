@@ -224,16 +224,15 @@ class DQNRunner(object):
         self.exploration = PiecewiseSchedule(
             [
                 (0, 1.0),
-                (epochs / 10, 0.1),
-                (epochs / 2, 0.01)
+                (1e6, 0.1),
+                (2e6, 0.01)
             ], outside_value=0.01,
         )
 
         self.lr_schedule = PiecewiseSchedule(
             [
             (0, 1e-4),
-            (epochs / 10, 1e-4),
-            (epochs / 2, 5e-5)
+            (2e6, 5e-5),
             ], outside_value=5e-5,
         )
 
@@ -242,7 +241,7 @@ class DQNRunner(object):
 
     def _run_one_step(self, logger, epoch):
         idx = self.replay_buffer.store_frame(self.obs)
-        epsilon = self.exploration.value(epoch)
+        epsilon = self.exploration.value(self.t)
         if np.random.random() < epsilon:
             act = self.env.action_space.sample()
         else:
@@ -263,7 +262,7 @@ class DQNRunner(object):
             self.t % self.learning_freq == 0 and \
             self.replay_buffer.can_sample(self.batch_size)):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer.sample(self.batch_size)
-            lr = self.lr_schedule.value(epoch)
+            lr = self.lr_schedule.value(self.t)
             feed_dict = {
                 self.agent.obs_ph: obs_batch,
                 self.agent.act_ph: act_batch,
@@ -295,8 +294,8 @@ class DQNRunner(object):
                 logger.log_tabular('Loss', average_only=True)
             except:
                 logger.log_tabular('Loss', 0)
-            logger.log_tabular('LearningRate', self.lr_schedule.value(epoch))
-            logger.log_tabular('Exploration', self.exploration.value(epoch))
+            logger.log_tabular('LearningRate', self.lr_schedule.value(self.t))
+            logger.log_tabular('Exploration', self.exploration.value(self.t))
             logger.log_tabular('TotalEnvInteracts', epoch * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()

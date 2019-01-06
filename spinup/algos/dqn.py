@@ -175,25 +175,24 @@ class DQNRunner(object):
         self.exploration = PiecewiseSchedule(
             [
                 (0, 1.0),
-                (epochs / 10, 0.1),
-                (epochs / 2, 0.01)
+                (1e6, 0.1),
+                (2e6, 0.01)
             ], outside_value=0.01,
         )
 
         self.lr_schedule = PiecewiseSchedule(
             [
             (0, 1e-4),
-            (epochs / 10, 1e-4),
-            (epochs / 2, 5e-5)
+            (2e6, 5e-5)
             ], outside_value=5e-5,
         )
 
         self.replay_buffer = ReplayBuffer(buffer_size, frame_stack, lander=False)
         self.agent = DQNAgent(obs_space, act_space, frame_stack)
 
-    def _run_one_step(self, logger, epoch):
+    def _run_one_step(self, logger):
         idx = self.replay_buffer.store_frame(self.obs)
-        epsilon = self.exploration.value(epoch)
+        epsilon = self.exploration.value(self.t)
         if np.random.random() < epsilon:
             act = self.env.action_space.sample()
         else:
@@ -209,12 +208,12 @@ class DQNRunner(object):
             self.obs = self.env.reset()
             self.ep_len, self.ep_r = 0, 0
 
-    def _train_one_step(self, logger, epoch):
+    def _train_one_step(self, logger):
         if (self.t > self.start_learn and \
             self.t % self.learning_freq == 0 and \
             self.replay_buffer.can_sample(self.batch_size)):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer.sample(self.batch_size)
-            lr = self.lr_schedule.value(epoch)
+            lr = self.lr_schedule.value(self.t)
             feed_dict = {
                 self.agent.obs_ph: obs_batch,
                 self.agent.act_ph: act_batch,
@@ -229,16 +228,16 @@ class DQNRunner(object):
                 self.agent.update_target(feed_dict)
             self.learning_step += 1
             
-    def _run_train_phase(self, logger, epoch):
+    def _run_train_phase(self, logger):
         for step in range(self.train_epoch_len):
-            self._run_one_step(logger, epoch)
-            self._train_one_step(logger, epoch)
+            self._run_one_step(logger)
+            self._train_one_step(logger)
 
     def run_experiment(self):
         logger = EpochLogger(**self.logger_kwargs)
         start_time = time.time()
         for epoch in range(1, self.epochs + 1):
-            self._run_train_phase(logger, epoch)
+            self._run_train_phase(logger)
             logger.log_tabular('Epoch', epoch)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
@@ -246,8 +245,8 @@ class DQNRunner(object):
                 logger.log_tabular('Loss', average_only=True)
             except:
                 logger.log_tabular('Loss', 0)
-            logger.log_tabular('LearningRate', self.lr_schedule.value(epoch))
-            logger.log_tabular('Exploration', self.exploration.value(epoch))
+            logger.log_tabular('LearningRate', self.lr_schedule.value(self.t))
+            logger.log_tabular('Exploration', self.exploration.value(self.t))
             logger.log_tabular('TotalEnvInteracts', epoch * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()

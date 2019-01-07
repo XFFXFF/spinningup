@@ -200,7 +200,7 @@ class DQNRunner(object):
         self.lr_schedule = PiecewiseSchedule(
             [
             (0, 1e-4),
-            (2e6, 1e-5),
+            (2e6, 5e-5),
             ], outside_value=5e-5,
         )
 

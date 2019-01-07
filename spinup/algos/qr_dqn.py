@@ -51,6 +51,7 @@ class DQNAgent(object):
             obs_space: gym.spaces, observation space.
             act_space: gym.spaces, action space.
             frame_stack: int, How many frames to stack as input to the net.
+            quant_n: int, How many quantiles to be computed.
             gamma: float, Discount factor, (Always between 0 and 1.)
         """
         tf.logging.info('obs_space: {}'.format(obs_space))
@@ -276,7 +277,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     from spinup.utils.run_utils import setup_logger_kwargs
-    logger_kwargs = setup_logger_kwargs(exp_name='dqn', env_name=args.env_name, seed=args.seed)
+    logger_kwargs = setup_logger_kwargs(exp_name='qr_dqn', env_name=args.env_name, seed=args.seed)
 
     tf.logging.set_verbosity(tf.logging.INFO)
     

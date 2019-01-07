@@ -19,6 +19,7 @@ My design principle:
 * SAC
 * DQN
 * C51
+* QR-DQN
 
 
 
@@ -84,3 +85,6 @@ learning](https://storage.googleapis.com/deepmind-media/dqn/DQNNaturePaper.pdf),
 ### C51
 [A Distributional Perspective on Reinforcement Learning](http://proceedings.mlr.press/v70/bellemare17a.html), Bellemare et al, 2017.  
 Marc G. Bellemare, Pablo Samuel Castro, Carles Gelada, Saurabh Kumar, Subhodeep Moitra. Dopamine, https://github.com/google/dopamine, 2018.
+
+### QR-DQN
+[Distributional Reinforcement Learning with Quantile Regression](https://arxiv.org/abs/1710.10044), Dabney et al, 2017.  
